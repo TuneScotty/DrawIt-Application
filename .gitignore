@@ -36,3 +36,6 @@ captures/
 .DS_Store
 *~
 *.swp
+
+# VS Code
+.vscode/

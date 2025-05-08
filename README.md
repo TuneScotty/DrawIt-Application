@@ -1,8 +1,8 @@
-# MyT - Multiplayer Drawing Game
+# DrawIt - Multiplayer Drawing Game
 
 ## Overview
 
-MyT is a multiplayer drawing game built for Android devices. Players can join lobbies, create new games, and compete against each other in a fun and interactive environment. The game allows users to draw and guess words, enhancing creativity and teamwork.
+DrawIt is a multiplayer drawing game built for Android devices. Players can join lobbies, create new games, and compete against each other in a fun and interactive environment. The game allows users to draw and guess words, enhancing creativity and teamwork.
 
 ## Features
 

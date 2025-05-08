@@ -1,0 +1,38 @@
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Android Studio
+*.iml
+.idea/
+.idea/caches/
+.idea/gradle.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/runConfigurations/
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+local.properties
+captures/
+
+# Keystore files
+*.jks
+*.keystore
+
+# NDK files
+.cxx/
+*/build/intermediates/cxx/
+
+# Log files
+*.log
+
+# APK/AAB files
+*.apk
+*.aab
+*.ap_
+
+# Other
+.DS_Store
+*~
+*.swp

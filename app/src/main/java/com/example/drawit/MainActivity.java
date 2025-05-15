@@ -63,16 +63,28 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Please fill in all fields", Toast.LENGTH_SHORT).show();
             return;
         }
+        
+        // Disable buttons to prevent multiple login attempts
+        loginButton.setEnabled(false);
+        registerButton.setEnabled(false);
 
         firebaseHandler.loginUser(email, password, task -> {
-            if (task.isSuccessful()) {
-                saveLoginCredentials(email, password);
-                startMainActivity();
-            } else {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, 
-                    "Login failed: " + task.getException().getMessage(), 
-                    Toast.LENGTH_SHORT).show());
-            }
+            // Re-enable buttons regardless of outcome
+            runOnUiThread(() -> {
+                loginButton.setEnabled(true);
+                registerButton.setEnabled(true);
+                
+                if (task.isSuccessful()) {
+                    saveLoginCredentials(email, password);
+                    startMainActivity();
+                } else {
+                    String errorMessage = "Login failed";
+                    if (task.getException() != null && task.getException().getMessage() != null) {
+                        errorMessage += ": " + task.getException().getMessage();
+                    }
+                    Toast.makeText(MainActivity.this, errorMessage, Toast.LENGTH_SHORT).show();
+                }
+            });
         });
     }
 
@@ -84,16 +96,28 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Please fill in all fields", Toast.LENGTH_SHORT).show();
             return;
         }
+        
+        // Disable buttons to prevent multiple registration attempts
+        loginButton.setEnabled(false);
+        registerButton.setEnabled(false);
 
         firebaseHandler.registerUser(email, password, task -> {
-            if (task.isSuccessful()) {
-                saveLoginCredentials(email, password);
-                startMainActivity();
-            } else {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, 
-                    "Registration failed: " + task.getException().getMessage(), 
-                    Toast.LENGTH_SHORT).show());
-            }
+            // Re-enable buttons regardless of outcome
+            runOnUiThread(() -> {
+                loginButton.setEnabled(true);
+                registerButton.setEnabled(true);
+                
+                if (task.isSuccessful()) {
+                    saveLoginCredentials(email, password);
+                    startMainActivity();
+                } else {
+                    String errorMessage = "Registration failed";
+                    if (task.getException() != null && task.getException().getMessage() != null) {
+                        errorMessage += ": " + task.getException().getMessage();
+                    }
+                    Toast.makeText(MainActivity.this, errorMessage, Toast.LENGTH_SHORT).show();
+                }
+            });
         });
     }
 
@@ -106,9 +130,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startMainActivity() {
-        Intent intent = new Intent(MainActivity.this, MainActivity2.class);
-        startActivity(intent);
-        finish();
+        try {
+            Intent intent = new Intent(MainActivity.this, MainActivity2.class);
+            // Add flags to create a new task and clear the previous ones
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            finish();
+        } catch (Exception e) {
+            // Log and handle any exceptions during activity transition
+            Toast.makeText(this, "Error starting application: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     // Optional: Add a logout method to clear credentials

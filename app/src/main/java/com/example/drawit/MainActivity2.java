@@ -44,6 +44,8 @@ public class MainActivity2 extends AppCompatActivity {
             return;
         }
 
+        firebaseHandler.cleanupInactiveLobbies();
+
         lobbies = new ArrayList<>();
         setupRecyclerView();
         setupCreateLobbyButton();
@@ -60,24 +62,63 @@ public class MainActivity2 extends AppCompatActivity {
 
             @Override
             public void onJoinClick(Lobby lobby) {
-                firebaseHandler.joinLobby(lobby.getId(), lobby.getEnteredPassword(), task -> {
-                    runOnUiThread(() -> {
-                        if (!task.isSuccessful()) {
-                            String errorMessage = task.getException() != null ? 
-                                task.getException().getMessage() : "Failed to join lobby";
-                            Toast.makeText(MainActivity2.this, errorMessage, Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-                        Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
-                        intent.putExtra("LOBBY_ID", lobby.getId());
-                        intent.putExtra("IS_HOST", false);
-                        startActivity(intent);
+                if (lobby == null || lobby.getId() == null) {
+                    Toast.makeText(MainActivity2.this, "Invalid lobby data.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                if (lobby.hasPassword()) {
+                    // Lobby is password protected, prompt for password
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity2.this);
+                    builder.setTitle("Enter Password");
+
+                    final View customLayout = getLayoutInflater().inflate(R.layout.dialog_enter_password, null);
+                    builder.setView(customLayout);
+                    final EditText passwordInput = customLayout.findViewById(R.id.passwordInput);
+
+                    builder.setPositiveButton("Join", (dialog, which) -> {
+                        String enteredPassword = passwordInput.getText().toString();
+                        joinLobbyWithPassword(lobby, enteredPassword);
                     });
-                });
+                    builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+                    builder.show();
+                } else {
+                    // Lobby is not password protected
+                    joinLobbyWithPassword(lobby, ""); // Pass empty string for non-protected lobbies
+                }
             }
         });
         lobbyRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         lobbyRecyclerView.setAdapter(lobbyAdapter);
+    }
+
+    private void joinLobbyWithPassword(Lobby lobby, String enteredPassword) {
+        if (lobby == null || lobby.getId() == null) {
+            Log.e(TAG, "joinLobbyWithPassword: Lobby or Lobby ID is null.");
+            Toast.makeText(MainActivity2.this, "Error joining lobby: Invalid lobby data.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        firebaseHandler.joinLobby(lobby.getId(), enteredPassword, task -> {
+            runOnUiThread(() -> {
+                if (!task.isSuccessful()) {
+                    String errorMessage = (task.getException() != null && task.getException().getMessage() != null) ?
+                            task.getException().getMessage() : "Failed to join lobby. Unknown error.";
+                    Log.e(TAG, "Failed to join lobby " + lobby.getId() + ": " + errorMessage, task.getException());
+                    Toast.makeText(MainActivity2.this, errorMessage, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                // Successfully joined or attempted to join (if password was correct or not needed)
+                try {
+                    Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
+                    intent.putExtra("LOBBY_ID", lobby.getId());
+                    intent.putExtra("IS_HOST", false); // User joining is not the host
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error starting LobbyActivity", e);
+                    Toast.makeText(MainActivity2.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
     }
 
     private void setupCreateLobbyButton() {
@@ -104,10 +145,15 @@ public class MainActivity2 extends AppCompatActivity {
                                     return;
                                 }
                                 String lobbyId = task.getResult();
-                                Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
-                                intent.putExtra("LOBBY_ID", lobbyId);
-                                intent.putExtra("IS_HOST", true);
-                                startActivity(intent);
+                                try {
+                                    Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
+                                    intent.putExtra("LOBBY_ID", lobbyId);
+                                    intent.putExtra("IS_HOST", true);
+                                    startActivity(intent);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "Error starting LobbyActivity", e);
+                                    Toast.makeText(MainActivity2.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                }
                             });
                         });
                     } else {
@@ -121,6 +167,15 @@ public class MainActivity2 extends AppCompatActivity {
     }
 
     private void attachLobbiesListener() {
+        // Detach any existing listener first to prevent duplicates
+        detachListeners();
+        
+        // Make sure Firebase is initialized
+        if (firebaseHandler == null || firebaseHandler.getLobbiesRef() == null) {
+            Log.e(TAG, "Cannot attach lobby listener: Firebase not initialized");
+            return;
+        }
+        
         lobbyListener = firebaseHandler.getLobbiesRef().addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -129,15 +184,31 @@ public class MainActivity2 extends AppCompatActivity {
                     String lobbyId = lobbySnapshot.getKey();
                     String name = lobbySnapshot.child("name").getValue(String.class);
                     String creator = lobbySnapshot.child("creator").getValue(String.class);
-                    Long playersCount = lobbySnapshot.child("playersCount").getValue(Long.class);
-                    Boolean hasPassword = lobbySnapshot.child("password").getValue(String.class) != null;
+                    Long playersCountLong = lobbySnapshot.child("playersCount").getValue(Long.class);
+                    // Ensure password field is checked safely
+                    String passwordHash = lobbySnapshot.child("password").getValue(String.class);
+                    // Default isActive to true if the field doesn't exist in older records
+                    Boolean isActive = lobbySnapshot.child("isActive").exists() ? 
+                        lobbySnapshot.child("isActive").getValue(Boolean.class) : true;
 
-                    if (lobbyId != null && name != null && creator != null && playersCount != null) {
-                        Lobby lobby = new Lobby(lobbyId, name, creator, playersCount.intValue(), hasPassword);
+                    // Default playersCount to 0 if null
+                    int playersCount = (playersCountLong != null) ? playersCountLong.intValue() : 0;
+
+                    // Only add lobbies that have the required fields and are active
+                    if (lobbyId != null && name != null && creator != null && (isActive == null || isActive)) {
+                        Lobby lobby = new Lobby(lobbyId, name, creator, playersCount, passwordHash);
+                        // Explicitly set the active state from Firebase
+                        lobby.setActive(isActive == null || isActive);
                         lobbies.add(lobby);
+                        Log.d(TAG, "Added lobby to list: " + lobbyId + ", name: " + name + ", active: " + lobby.isActive());
+                    } else {
+                        Log.d(TAG, "Skipped lobby: " + lobbyId + ", active status: " + isActive);
                     }
                 }
-                lobbyAdapter.notifyDataSetChanged();
+                // Update the adapter with the new list
+                if (lobbyAdapter != null) {
+                    lobbyAdapter.updateLobbies(lobbies);
+                }
             }
 
             @Override
@@ -150,8 +221,35 @@ public class MainActivity2 extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (lobbyListener != null) {
-            firebaseHandler.getLobbiesRef().removeEventListener(lobbyListener);
+        // Properly detach all Firebase listeners
+        detachListeners();
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Detach listeners when the activity is not in the foreground
+        detachListeners();
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Reattach listeners when the activity comes back to the foreground
+        if (firebaseHandler != null && firebaseHandler.getCurrentUser() != null) {
+            attachLobbiesListener();
+        }
+    }
+    
+    private void detachListeners() {
+        // Remove all Firebase listeners to prevent memory leaks
+        if (lobbyListener != null && firebaseHandler != null) {
+            try {
+                firebaseHandler.getLobbiesRef().removeEventListener(lobbyListener);
+                lobbyListener = null;
+            } catch (Exception e) {
+                Log.e(TAG, "Error detaching lobby listener", e);
+            }
         }
     }
 }

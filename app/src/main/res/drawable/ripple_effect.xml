@@ -7,10 +7,5 @@
             <corners android:radius="24dp" />
         </shape>
     </item>
-    <item>
-        <shape android:shape="rectangle">
-            <corners android:radius="24dp" />
-            <solid android:color="@color/primary" />
-        </shape>
-    </item>
+    <item android:drawable="@drawable/button_selector" />
 </ripple>

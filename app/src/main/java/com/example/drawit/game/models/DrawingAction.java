@@ -2,6 +2,8 @@ package com.example.drawit.game.models;
 
 import android.graphics.Color;
 
+import java.util.UUID;
+
 /**
  * Represents a drawing action performed by the drawer.
  * This model is used to synchronize drawing operations across clients.
@@ -13,6 +15,14 @@ public class DrawingAction {
     public static final int ACTION_CLEAR = 2;
     public static final int ACTION_UNDO = 3;
     public static final int ACTION_FILL = 4;
+    public static final int TYPE_STROKE = 5; // New type for stroke-based model
+    public static final int TYPE_CLEAR = 6;  // New type for clearing canvas
+    public static final int ACTION_START = 7; // Start of a stroke
+    public static final int ACTION_END = 8;   // End of a stroke
+    public static final int ACTION_SET_COLOR = 9; // Set color action
+    public static final int ACTION_SET_BRUSH_SIZE = 10; // Set brush size action
+    public static final int ACTION_SET_ERASER = 11; // Set eraser action
+    public static final int ACTION_SET_BRUSH = 12; // Set brush action
     
     private int actionType;
     private float startX;
@@ -23,6 +33,8 @@ public class DrawingAction {
     private float strokeWidth;
     private long timestamp;
     private String drawerId;
+    private String actionId;
+    private Stroke stroke;
     
     /**
      * Default constructor for Firebase
@@ -31,6 +43,7 @@ public class DrawingAction {
         this.timestamp = System.currentTimeMillis();
         this.color = Color.BLACK;
         this.strokeWidth = 5.0f;
+        this.actionId = UUID.randomUUID().toString();
     }
     
     /**
@@ -79,6 +92,54 @@ public class DrawingAction {
         this.actionType = actionType;
     }
     
+    /**
+     * @deprecated Use setActionType() instead
+     */
+    @Deprecated
+    public void setType(int type) {
+        this.actionType = type;
+    }
+    
+    public void setBrushSize(float size) {
+        this.strokeWidth = size;
+    }
+    
+    public float getBrushSize() {
+        return strokeWidth;
+    }
+    
+    public void setColor(int color) {
+        this.color = color;
+    }
+    
+    public int getColor() {
+        return color;
+    }
+    
+    public void setStroke(Stroke stroke) {
+        this.stroke = stroke;
+    }
+    
+    public Stroke getStroke() {
+        return stroke;
+    }
+    
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
+    }
+    
+    public long getTimestamp() {
+        return timestamp;
+    }
+    
+    public String getDrawerId() {
+        return drawerId;
+    }
+    
+    public void setDrawerId(String drawerId) {
+        this.drawerId = drawerId;
+    }
+    
     public float getStartX() {
         return startX;
     }
@@ -111,14 +172,6 @@ public class DrawingAction {
         this.endY = endY;
     }
     
-    public int getColor() {
-        return color;
-    }
-    
-    public void setColor(int color) {
-        this.color = color;
-    }
-    
     public float getStrokeWidth() {
         return strokeWidth;
     }
@@ -127,19 +180,28 @@ public class DrawingAction {
         this.strokeWidth = strokeWidth;
     }
     
-    public long getTimestamp() {
-        return timestamp;
+    public String getActionId() {
+        return actionId;
     }
     
-    public void setTimestamp(long timestamp) {
-        this.timestamp = timestamp;
+    public void setActionId(String actionId) {
+        this.actionId = actionId;
     }
     
-    public String getDrawerId() {
-        return drawerId;
-    }
-    
-    public void setDrawerId(String drawerId) {
-        this.drawerId = drawerId;
+    @Override
+    public String toString() {
+        return "DrawingAction{" +
+                "actionType=" + actionType +
+                ", startX=" + startX +
+                ", startY=" + startY +
+                ", endX=" + endX +
+                ", endY=" + endY +
+                ", color=" + color +
+                ", strokeWidth=" + strokeWidth +
+                ", timestamp=" + timestamp +
+                ", drawerId='" + drawerId + '\'' +
+                ", actionId='" + actionId + '\'' +
+                ", stroke=" + stroke +
+                '}';
     }
 }

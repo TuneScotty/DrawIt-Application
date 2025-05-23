@@ -2,6 +2,7 @@ package com.example.drawit.game;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,13 +46,24 @@ public class DefaultWordProvider implements WordProvider {
         addWord("fish", "easy", "animals");
         addWord("bird", "easy", "animals");
         addWord("duck", "easy", "animals");
+        addWord("pig", "easy", "animals");
+        addWord("frog", "easy", "animals");
+        addWord("cow", "easy", "animals");
+        addWord("rabbit", "easy", "animals");
+        addWord("mouse", "easy", "animals");
         
         // Medium animals
         addWord("elephant", "medium", "animals");
         addWord("giraffe", "medium", "animals");
-        addWord("penguin", "medium", "animals");
-        addWord("dolphin", "medium", "animals");
         addWord("kangaroo", "medium", "animals");
+        addWord("dolphin", "medium", "animals");
+        addWord("penguin", "medium", "animals");
+        addWord("octopus", "medium", "animals");
+        addWord("panda", "medium", "animals");
+        addWord("koala", "medium", "animals");
+        addWord("tiger", "medium", "animals");
+        addWord("monkey", "medium", "animals");
+        addWord("zebra", "medium", "animals");
         
         // Hard animals
         addWord("platypus", "hard", "animals");
@@ -164,8 +176,47 @@ public class DefaultWordProvider implements WordProvider {
     
     @Override
     public List<String> getWordsByCategory(String category) {
-        List<String> words = wordsByCategory.get(category);
-        return words != null ? new ArrayList<>(words) : new ArrayList<>();
+        if (category == null || !wordsByCategory.containsKey(category)) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(wordsByCategory.get(category));
+    }
+    
+    @Override
+    public String getRandomWord() {
+        if (allWords.isEmpty()) {
+            return "elephant"; // Default fallback if no words are available
+        }
+        
+        // Pick a random word from the list
+        int randomIndex = (int) (Math.random() * allWords.size());
+        return allWords.get(randomIndex);
+    }
+    
+    @Override
+    public List<String> getRandomWords(int count) {
+        List<String> result = new ArrayList<>();
+        
+        if (allWords.isEmpty()) {
+            // Add default words if no words are available
+            result.add("elephant");
+            result.add("dog");
+            result.add("house");
+            return result;
+        }
+        
+        // Create a copy of all words to avoid duplicates
+        List<String> availableWords = new ArrayList<>(allWords);
+        
+        // Shuffle the list for randomness
+        Collections.shuffle(availableWords);
+        
+        // Take the first 'count' elements or as many as available
+        for (int i = 0; i < Math.min(count, availableWords.size()); i++) {
+            result.add(availableWords.get(i));
+        }
+        
+        return result;
     }
     
     /**

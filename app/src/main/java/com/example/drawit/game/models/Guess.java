@@ -6,7 +6,6 @@ package com.example.drawit.game.models;
  */
 public class Guess {
     private String playerId;
-    private String playerName;
     private String guessText;
     private long timestamp;
     private boolean isCorrect;
@@ -22,14 +21,17 @@ public class Guess {
     /**
      * Constructor with guess details
      */
-    public Guess(String playerId, String playerName, String guessText) {
+    public Guess(String playerId, String guessText) {
         this();
         this.playerId = playerId;
-        this.playerName = playerName;
         this.guessText = guessText;
     }
 
-    public Guess(String playerId, String guessText, long l) {
+    public Guess(String playerId, String guessText, long timestamp) {
+        this.playerId = playerId;
+        this.guessText = guessText;
+        this.timestamp = timestamp;
+        this.isCorrect = false;
     }
 
     // Getters and setters
@@ -39,14 +41,6 @@ public class Guess {
     
     public void setPlayerId(String playerId) {
         this.playerId = playerId;
-    }
-    
-    public String getPlayerName() {
-        return playerName;
-    }
-    
-    public void setPlayerName(String playerName) {
-        this.playerName = playerName;
     }
     
     public String getGuessText() {

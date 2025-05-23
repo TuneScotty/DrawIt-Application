@@ -27,4 +27,17 @@ public interface WordProvider {
      * @return A list of words in the specified category
      */
     List<String> getWordsByCategory(String category);
+    
+    /**
+     * Get a single random word suitable for drawing.
+     * @return A random word
+     */
+    String getRandomWord();
+    
+    /**
+     * Get a specific number of random words suitable for drawing.
+     * @param count The number of random words to get
+     * @return A list of random words
+     */
+    List<String> getRandomWords(int count);
 }

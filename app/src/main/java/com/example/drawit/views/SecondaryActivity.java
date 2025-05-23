@@ -1,4 +1,4 @@
-package com.example.drawit;
+package com.example.drawit.views;
 
 import android.content.Intent;
 import android.os.Bundle;
@@ -14,6 +14,10 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.drawit.adapters.LobbyAdapter;
 import com.example.drawit.models.Lobby;
+import com.example.drawit.views.MainActivity;
+import com.example.drawit.views.LobbyActivity;
+import com.example.drawit.R;
+import com.example.drawit.game.FirebaseHandler;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -21,14 +25,14 @@ import com.google.firebase.database.ValueEventListener;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity2 extends AppCompatActivity {
+public class SecondaryActivity extends AppCompatActivity {
     private FirebaseHandler firebaseHandler;
     private RecyclerView lobbyRecyclerView;
     private LobbyAdapter lobbyAdapter;
     private List<Lobby> lobbies;
     private ValueEventListener lobbyListener;
     private Button createLobbyButton;
-    private static final String TAG = "MainActivity2";
+    private static final String TAG = "SecondaryActivity";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,7 +43,6 @@ public class MainActivity2 extends AppCompatActivity {
         
         if (firebaseHandler.getCurrentUser() == null) {
             Toast.makeText(this, "Please login first", Toast.LENGTH_SHORT).show();
-            startActivity(new Intent(this, MainActivity.class));
             finish();
             return;
         }
@@ -63,13 +66,13 @@ public class MainActivity2 extends AppCompatActivity {
             @Override
             public void onJoinClick(Lobby lobby) {
                 if (lobby == null || lobby.getId() == null) {
-                    Toast.makeText(MainActivity2.this, "Invalid lobby data.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(SecondaryActivity.this, "Invalid lobby data.", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
                 if (lobby.hasPassword()) {
                     // Lobby is password protected, prompt for password
-                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity2.this);
+                    AlertDialog.Builder builder = new AlertDialog.Builder(SecondaryActivity.this);
                     builder.setTitle("Enter Password");
 
                     final View customLayout = getLayoutInflater().inflate(R.layout.dialog_enter_password, null);
@@ -95,7 +98,7 @@ public class MainActivity2 extends AppCompatActivity {
     private void joinLobbyWithPassword(Lobby lobby, String enteredPassword) {
         if (lobby == null || lobby.getId() == null) {
             Log.e(TAG, "joinLobbyWithPassword: Lobby or Lobby ID is null.");
-            Toast.makeText(MainActivity2.this, "Error joining lobby: Invalid lobby data.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(SecondaryActivity.this, "Error joining lobby: Invalid lobby data.", Toast.LENGTH_SHORT).show();
             return;
         }
         firebaseHandler.joinLobby(lobby.getId(), enteredPassword, task -> {
@@ -104,18 +107,18 @@ public class MainActivity2 extends AppCompatActivity {
                     String errorMessage = (task.getException() != null && task.getException().getMessage() != null) ?
                             task.getException().getMessage() : "Failed to join lobby. Unknown error.";
                     Log.e(TAG, "Failed to join lobby " + lobby.getId() + ": " + errorMessage, task.getException());
-                    Toast.makeText(MainActivity2.this, errorMessage, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(SecondaryActivity.this, errorMessage, Toast.LENGTH_SHORT).show();
                     return;
                 }
                 // Successfully joined or attempted to join (if password was correct or not needed)
                 try {
-                    Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
+                    Intent intent = new Intent(SecondaryActivity.this, LobbyActivity.class);
                     intent.putExtra("LOBBY_ID", lobby.getId());
                     intent.putExtra("IS_HOST", false); // User joining is not the host
                     startActivity(intent);
                 } catch (Exception e) {
                     Log.e(TAG, "Error starting LobbyActivity", e);
-                    Toast.makeText(MainActivity2.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(SecondaryActivity.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 }
             });
         });
@@ -141,23 +144,23 @@ public class MainActivity2 extends AppCompatActivity {
                                 if (!task.isSuccessful()) {
                                     String errorMessage = task.getException() != null ? 
                                         task.getException().getMessage() : "Failed to create lobby";
-                                    Toast.makeText(MainActivity2.this, errorMessage, Toast.LENGTH_LONG).show();
+                                    Toast.makeText(SecondaryActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                                     return;
                                 }
                                 String lobbyId = task.getResult();
                                 try {
-                                    Intent intent = new Intent(MainActivity2.this, LobbyActivity.class);
+                                    Intent intent = new Intent(SecondaryActivity.this, LobbyActivity.class);
                                     intent.putExtra("LOBBY_ID", lobbyId);
                                     intent.putExtra("IS_HOST", true);
                                     startActivity(intent);
                                 } catch (Exception e) {
                                     Log.e(TAG, "Error starting LobbyActivity", e);
-                                    Toast.makeText(MainActivity2.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(SecondaryActivity.this, "Error starting lobby: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                                 }
                             });
                         });
                     } else {
-                        Toast.makeText(MainActivity2.this, "Please enter a lobby name", 
+                        Toast.makeText(SecondaryActivity.this, "Please enter a lobby name", 
                             Toast.LENGTH_SHORT).show();
                     }
                 })

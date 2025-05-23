@@ -1,4 +1,4 @@
-package com.example.drawit;
+package com.example.drawit.game;
 
 import android.util.Log;
 import androidx.annotation.NonNull;
@@ -20,6 +20,8 @@ import com.google.firebase.database.DatabaseError;
 
 import com.example.drawit.models.Lobby;
 import com.example.drawit.models.Player;
+import com.example.drawit.game.models.GameStatus;
+import com.example.drawit.game.models.DrawingAction;
 
 public class FirebaseHandler {
     private static FirebaseHandler instance;
@@ -49,9 +51,180 @@ public class FirebaseHandler {
         }
         return instance;
     }
+    
+    /**
+     * Get a reference to a game in the database
+     * @param gameId The ID of the game
+     * @return DatabaseReference to the game
+     */
+    public DatabaseReference getGameReference(String gameId) {
+        return inGameLobbiesRef.child(gameId);
+    }
 
     public DatabaseReference getLobbiesRef() {
         return lobbiesRef;
+    }
+    
+    /**
+     * Get drawing actions for a specific round and player for rating
+     * 
+     * @param lobbyId The ID of the lobby
+     * @param roundNumber The round number
+     * @param playerId The ID of the player who drew
+     * @param callback Callback with the list of drawing actions
+     */
+    public void getDrawingForRound(String lobbyId, int roundNumber, String playerId, DrawingCallback callback) {
+        if (lobbyId == null || lobbyId.isEmpty() || playerId == null || playerId.isEmpty()) {
+            Log.e(TAG, "Invalid parameters for getDrawingForRound");
+            callback.onDrawingLoaded(new ArrayList<>());
+            return;
+        }
+        
+        Log.d(TAG, "Fetching drawings for lobby: " + lobbyId + ", round: " + roundNumber + ", player: " + playerId);
+        
+        // Construct multiple possible paths to the drawings for the specified round and player
+        // Try both formats to ensure we find the drawings
+        String drawingsPath1 = String.format("rounds/%d/playerDrawings/%s", roundNumber, playerId);
+        String drawingsPath2 = String.format("drawings/%s/%d/%s", lobbyId, roundNumber, playerId);
+        String drawingsPath3 = String.format("drawings/round%d/player%s", roundNumber, playerId);
+        
+        Log.d(TAG, "Trying multiple paths to find drawings:");
+        Log.d(TAG, "Path 1: " + drawingsPath1);
+        Log.d(TAG, "Path 2: " + drawingsPath2);
+        Log.d(TAG, "Path 3: " + drawingsPath3);
+        
+        // First try path 1
+        inGameLobbiesRef.child(lobbyId).child(drawingsPath1).get().addOnCompleteListener(task -> {
+            if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
+                List<DrawingAction> drawingActions = new ArrayList<>();
+                for (DataSnapshot actionSnapshot : task.getResult().getChildren()) {
+                    DrawingAction action = actionSnapshot.getValue(DrawingAction.class);
+                    if (action != null) {
+                        drawingActions.add(action);
+                    }
+                }
+                Log.d(TAG, "Path 1 successful! Loaded " + drawingActions.size() + " drawing actions");
+                callback.onDrawingLoaded(drawingActions);
+            } else {
+                Log.d(TAG, "Path 1 failed, trying path 2...");
+                
+                // Try path 2 (direct reference)
+                DatabaseReference path2Ref = FirebaseDatabase.getInstance().getReference(drawingsPath2);
+                path2Ref.get().addOnCompleteListener(task2 -> {
+                    if (task2.isSuccessful() && task2.getResult() != null && task2.getResult().exists()) {
+                        List<DrawingAction> drawingActions = new ArrayList<>();
+                        for (DataSnapshot actionSnapshot : task2.getResult().getChildren()) {
+                            DrawingAction action = actionSnapshot.getValue(DrawingAction.class);
+                            if (action != null) {
+                                drawingActions.add(action);
+                            }
+                        }
+                        Log.d(TAG, "Path 2 successful! Loaded " + drawingActions.size() + " drawing actions");
+                        callback.onDrawingLoaded(drawingActions);
+                    } else {
+                        Log.d(TAG, "Path 2 failed, trying path 3...");
+                        
+                        // Try path 3 (with round/player prefixes)
+                        DatabaseReference path3Ref = FirebaseDatabase.getInstance().getReference(drawingsPath3);
+                        path3Ref.get().addOnCompleteListener(task3 -> {
+                            if (task3.isSuccessful() && task3.getResult() != null && task3.getResult().exists()) {
+                                List<DrawingAction> drawingActions = new ArrayList<>();
+                                for (DataSnapshot actionSnapshot : task3.getResult().getChildren()) {
+                                    DrawingAction action = actionSnapshot.getValue(DrawingAction.class);
+                                    if (action != null) {
+                                        drawingActions.add(action);
+                                    }
+                                }
+                                Log.d(TAG, "Path 3 successful! Loaded " + drawingActions.size() + " drawing actions");
+                                callback.onDrawingLoaded(drawingActions);
+                            } else {
+                                Log.e(TAG, "All paths failed. No drawings found for player " + playerId + " in round " + roundNumber);
+                                callback.onDrawingLoaded(new ArrayList<>());
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    }
+    
+    /**
+     * Save drawing actions to Firebase for a specific round and player
+     * This ensures drawings are stored in all possible paths for reliable retrieval
+     * 
+     * @param lobbyId The lobby ID
+     * @param roundNumber The round number
+     * @param playerId The player ID who created the drawing
+     * @param drawingActions The list of drawing actions to save
+     */
+    public void saveDrawingForRound(String lobbyId, int roundNumber, String playerId, List<DrawingAction> drawingActions) {
+        if (lobbyId == null || lobbyId.isEmpty() || playerId == null || playerId.isEmpty() || drawingActions == null) {
+            Log.e(TAG, "Invalid parameters for saveDrawingForRound");
+            return;
+        }
+        
+        Log.d(TAG, "Saving " + drawingActions.size() + " drawing actions for player " + playerId + " in round " + roundNumber);
+        
+        // Save to all three paths to ensure retrieval works properly
+        String path1 = String.format("rounds/%d/playerDrawings/%s", roundNumber, playerId);
+        String path2 = String.format("drawings/%s/%d/%s", lobbyId, roundNumber, playerId);
+        String path3 = String.format("drawings/round%d/player%s", roundNumber, playerId);
+        
+        // Create a map with drawing actions indexed by their ID or position
+        Map<String, Object> drawingsMap = new HashMap<>();
+        for (int i = 0; i < drawingActions.size(); i++) {
+            DrawingAction action = drawingActions.get(i);
+            // Use action ID if available, otherwise use the index
+            String key = (action.getActionId() != null) ? action.getActionId() : "action_" + i;
+            drawingsMap.put(key, action);
+        }
+        
+        // Save to path 1
+        inGameLobbiesRef.child(lobbyId).child(path1).setValue(drawingsMap)
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Successfully saved drawings to path 1"))
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to save drawings to path 1: " + e.getMessage()));
+        
+        // Save to path 2
+        DatabaseReference path2Ref = FirebaseDatabase.getInstance().getReference(path2);
+        path2Ref.setValue(drawingsMap)
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Successfully saved drawings to path 2"))
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to save drawings to path 2: " + e.getMessage()));
+        
+        // Save to path 3
+        DatabaseReference path3Ref = FirebaseDatabase.getInstance().getReference(path3);
+        path3Ref.setValue(drawingsMap)
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Successfully saved drawings to path 3"))
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to save drawings to path 3: " + e.getMessage()));
+    }
+    
+    /**
+     * Update game status in Firebase
+     * 
+     * @param lobbyId Lobby ID
+     * @param status New game status
+     */
+    public void updateGameStatus(String lobbyId, GameStatus status) {
+        if (lobbyId == null || status == null) {
+            Log.e(TAG, "Invalid parameters for updateGameStatus");
+            return;
+        }
+        
+        String path = "lobbies/" + lobbyId + "/status";
+        DatabaseReference statusRef = FirebaseDatabase.getInstance().getReference(path);
+        statusRef.setValue(status.toString())
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Game status updated to " + status))
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to update game status: " + e.getMessage()));
+    }
+    
+    /**
+     * Callback interface for loading drawing actions
+     */
+    public interface DrawingCallback {
+        void onDrawingLoaded(List<DrawingAction> drawings);
+    }
+    
+    public DatabaseReference getInGameLobbiesRef() {
+        return inGameLobbiesRef;
     }
 
     public FirebaseUser getCurrentUser() {
@@ -508,7 +681,7 @@ public class FirebaseHandler {
         // Then, initialize the game state in the in-game database
         // This ensures all clients have the same initial game state
         Map<String, Object> gameInitData = new HashMap<>();
-        gameInitData.put("status", "STARTED");
+        gameInitData.put("status", GameStatus.STARTED.toString());
         gameInitData.put("currentRound", 1);
         gameInitData.put("currentDrawerIndex", 0);
         gameInitData.put("createdAt", ServerValue.TIMESTAMP);
@@ -685,32 +858,41 @@ public class FirebaseHandler {
     
     /**
      * Listen for game data changes
+     * @return The registered ValueEventListener for later removal
      */
-    public void listenForGameUpdates(String lobbyId, ValueEventListener listener) {
-        if (getCurrentUser() == null) return;
+    public ValueEventListener listenForGameUpdates(String lobbyId, ValueEventListener listener) {
+        if (getCurrentUser() == null) return null;
         
         inGameLobbiesRef.child(lobbyId).child("gameData")
             .addValueEventListener(listener);
+        
+        return listener;
     }
     
     /**
      * Listen for new drawing actions
+     * @return The registered ChildEventListener for later removal
      */
-    public void listenForDrawingActions(String lobbyId, ChildEventListener listener) {
-        if (getCurrentUser() == null) return;
+    public ChildEventListener listenForDrawingActions(String lobbyId, ChildEventListener listener) {
+        if (getCurrentUser() == null) return null;
         
         inGameLobbiesRef.child(lobbyId).child("drawingActions")
             .addChildEventListener(listener);
+        
+        return listener;
     }
     
     /**
      * Listen for new guesses
+     * @return The registered ChildEventListener for later removal
      */
-    public void listenForGuesses(String lobbyId, ChildEventListener listener) {
-        if (getCurrentUser() == null) return;
+    public ChildEventListener listenForGuesses(String lobbyId, ChildEventListener listener) {
+        if (getCurrentUser() == null) return null;
         
         inGameLobbiesRef.child(lobbyId).child("guesses")
             .addChildEventListener(listener);
+        
+        return listener;
     }
 
     public void updateLobbyPassword(String lobbyId, String newPassword, OnCompleteListener<Void> callback) {

@@ -29,8 +29,8 @@ public class GameManager {
     
     // Game state
     private Game game;
-    private WordProvider wordProvider;
-    private Random random;
+    private final WordProvider wordProvider;
+    private final Random random;
     
     // Listeners
     private GameEventListener eventListener;
@@ -68,6 +68,13 @@ public class GameManager {
     }
     
     /**
+     * Get the word provider
+     */
+    public WordProvider getWordProvider() {
+        return wordProvider;
+    }
+    
+    /**
      * Set the game state (for loading from persistence)
      */
     public void setGame(Game game) {
@@ -75,11 +82,55 @@ public class GameManager {
     }
     
     /**
+     * Set a player as the host
+     * @param playerId The ID of the player to set as host
+     * @return true if successful, false otherwise
+     */
+    public boolean setHost(String playerId) {
+        if (playerId == null || playerId.isEmpty()) {
+            Log.e(TAG, "Invalid player ID");
+            return false;
+        }
+        
+        // Find the player
+        Player player = game.findPlayerById(playerId);
+        if (player == null) {
+            Log.e(TAG, "Player not found: " + playerId);
+            return false;
+        }
+        
+        // Remove host status from current host if any
+        for (Player p : game.getPlayers()) {
+            if (p.isHost()) {
+                p.setHost(false);
+            }
+        }
+        
+        // Set the new host
+        player.setHost(true);
+        
+        // Notify listeners
+        if (eventListener != null) {
+            eventListener.onHostChanged(game, player);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Get the current player count
+     * @return The number of players in the game
+     */
+    public int getPlayerCount() {
+        return game.getPlayers().size();
+    }
+    
+    /**
      * Create a new player and add them to the game
      */
     public Player addPlayer(String playerId, String playerName) {
         // Check if the game has already started
-        if (game.getStatus() != GameStatus.WAITING) {
+        if (game.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             Log.e(TAG, "Cannot add player to a game that has already started");
             return null;
         }
@@ -212,7 +263,7 @@ public class GameManager {
         }
         
         // Check if the game is in the waiting state
-        if (game.getStatus() != GameStatus.WAITING) {
+        if (game.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             Log.e(TAG, "Game is not in the waiting state");
             return false;
         }
@@ -259,7 +310,7 @@ public class GameManager {
         
         // Set the word selection timeout
         long currentTime = System.currentTimeMillis();
-        game.setWordSelectionEndTime(currentTime + (game.getWordSelectionTimeSeconds() * 1000));
+        game.setWordSelectionEndTime(currentTime + (game.getWordSelectionTimeSeconds() * 1000L));
         
         // Update game status
         game.setStatus(GameStatus.WORD_SELECTION);
@@ -355,7 +406,7 @@ public class GameManager {
         // Set the round start and end times
         long currentTime = System.currentTimeMillis();
         game.setRoundStartTime(currentTime);
-        game.setRoundEndTime(currentTime + (game.getRoundDurationSeconds() * 1000));
+        game.setRoundEndTime(currentTime + (game.getRoundDurationSeconds() * 1000L));
         
         // Update game status
         game.setStatus(GameStatus.DRAWING);
@@ -509,7 +560,7 @@ public class GameManager {
         // Set the rating phase timeout (30 seconds per player to rate)
         long currentTime = System.currentTimeMillis();
         int ratingTimeSeconds = 30 * (game.getPlayers().size() - 1); // Time to rate each player's drawing
-        game.setRatingPhaseEndTime(currentTime + (ratingTimeSeconds * 1000));
+        game.setRatingPhaseEndTime(currentTime + (ratingTimeSeconds * 1000L));
         
         // Notify listeners
         if (eventListener != null) {
@@ -528,21 +579,161 @@ public class GameManager {
     /**
      * End the current round
      */
-    private void endRound() {
-        // Update game status
-        game.setStatus(GameStatus.ROUND_ENDED);
+    public void endRound() {
+        // First transition to rating phase
+        Log.d(TAG, "Ending round " + game.getCurrentRound() + " and transitioning to rating phase");
+        game.setStatus(GameStatus.RATING);
+        
+        // Notify listeners about the rating phase
+        if (eventListener != null) {
+            eventListener.onRatingPhaseStarted(game);
+        }
+        
+        // We don't immediately move to the next round or end the game
+        // The rating phase will be handled by the UI, and then startNextRound will be called
+    }
+    
+    /**
+     * Save the current round's drawings for rating
+     */
+    public void saveRoundDrawings() {
+        // Logic to save drawings for the rating phase
+        // This would normally store the drawings in Firebase
+        Log.d(TAG, "Saving drawings for rating from round " + game.getCurrentRound());
+    }
+    
+    /**
+     * Submit a rating for a player's drawing
+     */
+    public void submitRating(String playerId, float rating) {
+        // Find the player
+        Player player = findPlayerById(playerId);
+        if (player == null) {
+            Log.e(TAG, "Player not found for rating: " + playerId);
+            return;
+        }
+        
+        // Add the rating to the player's score
+        int pointsForRating = (int)(rating * 20); // Convert 5-star rating to points (max 100)
+        player.addPoints(pointsForRating);
+        
+        Log.d(TAG, "Added " + pointsForRating + " points to player " + player.getName() + 
+              " for drawing rating: " + rating);
+    }
+    
+    /**
+     * Find a player by their ID
+     * 
+     * @param playerId The ID of the player to find
+     * @return The player object if found, null otherwise
+     */
+    private Player findPlayerById(String playerId) {
+        if (playerId == null || game == null || game.getPlayers() == null) {
+            return null;
+        }
+        
+        for (Player player : game.getPlayers()) {
+            if (playerId.equals(player.getId())) {
+                return player;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Select the next player to be the drawer
+     */
+    private void selectNextDrawer() {
+        if (game == null || game.getPlayers() == null || game.getPlayers().isEmpty()) {
+            Log.e(TAG, "Cannot select next drawer: game or players list is null");
+            return;
+        }
+        
+        List<Player> players = game.getPlayers();
+        int currentDrawerIndex = game.getCurrentDrawerIndex();
+        
+        // Move to the next drawer
+        currentDrawerIndex = (currentDrawerIndex + 1) % players.size();
+        game.setCurrentDrawerIndex(currentDrawerIndex);
+        
+        // Set the current drawer
+        Player nextDrawer = players.get(currentDrawerIndex);
+        game.setCurrentDrawer(nextDrawer);
+        
+        Log.d(TAG, "Selected next drawer: " + nextDrawer.getName());
+    }
+    
+    /**
+     * Start the next round after the current round has ended
+     */
+    public void startNextRound() {
+        // Check if we've reached the maximum number of rounds
+        if (game.getCurrentRound() >= game.getTotalRounds()) {
+            // Game is over
+            endGame("All rounds completed");
+            return;
+        }
+        
+        // Increment the round counter if not already done
+        int currentRound = game.getCurrentRound();
+        game.setCurrentRound(currentRound + 1);
+        
+        // Log the start of a new round
+        Log.d(TAG, "Starting round " + game.getCurrentRound() + " of " + game.getTotalRounds());
+        
+        // Clear the canvas for the next round
+        game.getDrawingActions().clear();
+        
+        // Select the next drawer
+        selectNextDrawer();
+        
+        // Word selection should only be done by the host and stored in Firebase
+        // to ensure all players get the same word
+        if (isHost()) {
+            Log.d(TAG, "Host is generating word choices for round " + game.getCurrentRound());
+            List<String> wordChoices = wordProvider.getRandomWords(MAX_WORD_CHOICES);
+            game.setWordChoices(wordChoices);
+            
+            // Set a default word in case no one chooses (only happens after timeout)
+            if (wordChoices != null && !wordChoices.isEmpty()) {
+                // Always use the first word as default to ensure consistency
+                String selectedWord = wordChoices.get(0);
+                game.setCurrentWord(selectedWord);
+                
+                // Save the selected word to Firebase to ensure all clients have the same word
+                saveSelectedWord(selectedWord);
+            }
+        } else {
+            Log.d(TAG, "Non-host player waiting for word to be selected by host");
+        }
+        
+        // Update game status to word selection
+        game.setStatus(GameStatus.WORD_SELECTION);
+        
+        // Notify listeners that a new round has started
+        if (eventListener != null) {
+            eventListener.onRoundStarted(game);
+            
+            // If there are word choices, notify about word selection phase
+            List<String> currentWordChoices = game.getWordChoices();
+            if (currentWordChoices != null && !currentWordChoices.isEmpty()) {
+                Player drawer = game.getCurrentDrawer();
+                eventListener.onWordSelectionStarted(game, drawer, currentWordChoices);
+            }
+        }
+        
+        // Update game status to drawing phase
+        game.setStatus(GameStatus.DRAWING);
+        
+        // Set the round start time
+        long currentTime = System.currentTimeMillis();
+        game.setRoundStartTime(currentTime);
+        game.setRoundEndTime(currentTime + (game.getRoundDurationSeconds() * 1000));
         
         // Notify listeners
         if (eventListener != null) {
-            eventListener.onRoundEnded(game);
-        }
-        
-        // Check if this was the last round
-        if (game.getCurrentRound() >= game.getTotalRounds()) {
-            // End the game
-            endGame("Game completed");
-        } else {
-            // Schedule the next round
+            eventListener.onDrawingPhaseStarted(game);
             game.setCurrentRound(game.getCurrentRound() + 1);
             
             // Move to the next drawer
@@ -567,16 +758,87 @@ public class GameManager {
     }
     
     /**
-     * End the game
+     * End the game with a specific reason
+     * 
+     * @param reason The reason for ending the game
      */
     public void endGame(String reason) {
-        // Update game status
+        // Set game status to ended
         game.setStatus(GameStatus.ENDED);
+        
+        // Calculate final scores and determine the winner
+        calculateFinalScores();
         
         // Notify listeners
         if (eventListener != null) {
             eventListener.onGameEnded(game, reason);
         }
+    }
+    
+    /**
+     * Complete the rating phase and move to the next round or end the game
+     */
+    public void completeRatingPhase() {
+        Log.d(TAG, "Completing rating phase for round " + game.getCurrentRound());
+        
+        // Check if this was the last round
+        if (game.getCurrentRound() >= game.getTotalRounds()) {
+            // End the game if all rounds are completed
+            endGame("All rounds completed");
+        } else {
+            // Otherwise start the next round
+            startNextRound();
+        }
+    }
+    
+    /**
+     * Calculate final scores at the end of the game
+     */
+    private void calculateFinalScores() {
+        // Sort players by score (highest first)
+        List<Player> players = new ArrayList<>(game.getPlayers());
+        Collections.sort(players, (p1, p2) -> Integer.compare(p2.getScore(), p1.getScore()));
+        
+        // Set the sorted list back to the game
+        game.setPlayers(players);
+        
+        // Determine the winner (player with highest score)
+        if (!players.isEmpty()) {
+            Player winner = players.get(0);
+            game.setWinner(winner);
+            Log.d(TAG, "Game winner: " + winner.getName() + " with score " + winner.getScore());
+        }
+    }
+    
+    /**
+     * Check if the current player is the host
+     * @return true if the current player is the host
+     */
+    private boolean isHost() {
+        // Check if the player is the host
+        // This would typically be set during initialization
+        return game.getHostId() != null && 
+               game.getCurrentPlayer() != null && 
+               game.getHostId().equals(game.getCurrentPlayer().getId());
+    }
+    
+    /**
+     * Save the selected word to Firebase so all clients have the same word
+     * @param word The selected word
+     */
+    private void saveSelectedWord(String word) {
+        if (word == null || word.isEmpty()) {
+            Log.e(TAG, "Cannot save empty word");
+            return;
+        }
+        
+        // We would use Firebase to save the word to ensure all clients have the same word
+        // This is a placeholder that should be replaced with actual Firebase code
+        Log.d(TAG, "Saving selected word to Firebase: " + word);
+        
+        // Example of how this would be implemented with Firebase:
+        // DatabaseReference gameRef = FirebaseDatabase.getInstance().getReference("games/" + game.getId());
+        // gameRef.child("currentWord").setValue(word);
     }
     
     /**

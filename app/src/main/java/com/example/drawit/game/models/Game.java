@@ -50,6 +50,18 @@ public class Game {
     // Player drawings - maps player ID to their drawing actions
     private Map<String, List<DrawingAction>> playerDrawings;
     
+    // Game winner
+    private Player winner;
+    
+    // Current drawer
+    private Player currentDrawer;
+    
+    // Host ID - the player who created the lobby and controls the game
+    private String hostId;
+    
+    // Current player - the local player using this device
+    private Player currentPlayer;
+    
     // Ratings - maps drawing player ID to a map of rater player ID to rating (1-3)
     private Map<String, Map<String, Integer>> ratings;
     
@@ -66,7 +78,7 @@ public class Game {
         this.lastGuessTimestamps = new HashMap<>();
         this.playerDrawings = new HashMap<>();
         this.ratings = new HashMap<>();
-        this.status = GameStatus.WAITING;
+        this.status = GameStatus.WAITING_FOR_PLAYERS;
         this.lobbyVisible = true;
         this.ratingPhase = false;
         
@@ -225,8 +237,77 @@ public class Game {
         }
     }
     
+    /**
+     * Set a complete list of drawing actions for a specific player
+     * @param playerId The ID of the player
+     * @param drawingActions The list of drawing actions to set
+     */
+    public void setPlayerDrawing(String playerId, List<DrawingAction> drawingActions) {
+        playerDrawings.put(playerId, new ArrayList<>(drawingActions));
+    }
+    
+    /**
+     * Get the ratings map
+     * @return The ratings map
+     */
     public Map<String, Map<String, Integer>> getRatings() {
         return ratings;
+    }
+    
+    /**
+     * Get the game winner
+     * @return The player who won the game
+     */
+    public Player getWinner() {
+        return winner;
+    }
+    
+    /**
+     * Set the game winner
+     * @param winner The player who won the game
+     */
+    public void setWinner(Player winner) {
+        this.winner = winner;
+    }
+    
+    /**
+     * Set the current drawer
+     * @param drawer The player who will be drawing
+     */
+    public void setCurrentDrawer(Player drawer) {
+        this.currentDrawer = drawer;
+    }
+    
+    /**
+     * Get the host ID
+     * @return The ID of the host player
+     */
+    public String getHostId() {
+        return hostId;
+    }
+    
+    /**
+     * Set the host ID
+     * @param hostId The ID of the host player
+     */
+    public void setHostId(String hostId) {
+        this.hostId = hostId;
+    }
+    
+    /**
+     * Get the current player
+     * @return The player using this device
+     */
+    public Player getCurrentPlayer() {
+        return currentPlayer;
+    }
+    
+    /**
+     * Set the current player
+     * @param player The player using this device
+     */
+    public void setCurrentPlayer(Player player) {
+        this.currentPlayer = player;
     }
     
     public void setRatings(Map<String, Map<String, Integer>> ratings) {
@@ -326,10 +407,19 @@ public class Game {
      * Get the current drawer player
      */
     public Player getCurrentDrawer() {
+        // First check if we have a directly assigned current drawer
+        if (currentDrawer != null) {
+            return currentDrawer;
+        }
+        
+        // Fall back to the index-based approach for backward compatibility
         if (players.isEmpty() || currentDrawerIndex < 0 || currentDrawerIndex >= players.size()) {
             return null;
         }
-        return players.get(currentDrawerIndex);
+        
+        // Get the drawer by index and update our field for future use
+        currentDrawer = players.get(currentDrawerIndex);
+        return currentDrawer;
     }
     
     /**

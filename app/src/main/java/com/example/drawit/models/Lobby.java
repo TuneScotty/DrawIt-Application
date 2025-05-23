@@ -71,4 +71,14 @@ public class Lobby {
     public void setGameStarted(Boolean gameStarted) {
         this.gameStarted = gameStarted;
     }
+
+    public int getMinPlayers() {
+        // Default minimum players, adjust as needed
+        return 2;
+    }
+
+    public int getMaxPlayers() {
+        // Default maximum players, adjust as needed
+        return 8;
+    }
 }

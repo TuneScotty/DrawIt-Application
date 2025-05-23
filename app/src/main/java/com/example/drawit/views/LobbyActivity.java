@@ -1,4 +1,4 @@
-package com.example.drawit;
+package com.example.drawit.views;
 
 import android.content.Intent;
 import android.os.Bundle;
@@ -20,6 +20,10 @@ import android.widget.TextView;
 import android.view.View;
 import android.app.ProgressDialog;
 
+import com.example.drawit.R;
+import com.example.drawit.game.FirebaseHandler;
+import com.example.drawit.adapters.PlayerAdapter;
+import com.example.drawit.views.SecondaryActivity;
 import com.example.drawit.models.Lobby;
 import com.example.drawit.models.Player; // Ensure this model exists and is correctly defined
 import com.google.firebase.auth.FirebaseAuth;
@@ -45,6 +49,8 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
     private boolean isHost;
     private Lobby currentLobbyData;
 
+    private List<Player> lobbyPlayers = new ArrayList<>();
+
     /**
      * Initializes the activity, sets up the user interface, and retrieves lobby data.
      * This method is called when the activity is first created.
@@ -58,20 +64,29 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_lobby);
 
-        firebaseHandler = FirebaseHandler.getInstance(); // Changed this line
-        lobbyId = getIntent().getStringExtra("LOBBY_ID");
-        isHost = getIntent().getBooleanExtra("IS_HOST", false); // Initial host status
+        firebaseHandler = FirebaseHandler.getInstance();
+        setupViews();
+        handleIntentExtras();
+    }
 
+    private void setupViews() {
         lobbyNameTextView = findViewById(R.id.lobbyNameTextView);
         playerRecyclerView = findViewById(R.id.playerRecyclerView);
         lockLobbyButton = findViewById(R.id.lockLobbyButton); // Ensure this ID matches your XML
         gameStartButton = findViewById(R.id.gameStartButton); // Updated to match the new ID in XML
         Button leaveButton = findViewById(R.id.leaveButton); // Get reference to leave button
+        Button settingsButton = findViewById(R.id.settingsButton); // Get reference to settings button
 
         setupPlayerRecyclerView();
         setupLobbyLockInteraction();
-        setupStartGameButton();
-        setupLeaveButton(leaveButton);
+        setupLeaveLobbyInteraction(leaveButton);
+        setupGameStartInteraction(gameStartButton);
+        setupSettingsInteraction(settingsButton);
+    }
+
+    private void handleIntentExtras() {
+        lobbyId = getIntent().getStringExtra("LOBBY_ID");
+        isHost = getIntent().getBooleanExtra("IS_HOST", false); // Initial host status
 
         if (lobbyId != null) {
             firebaseHandler.addLobbyListener(lobbyId, this);
@@ -125,7 +140,7 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
      * 
      * @param leaveButton The Button view to set up with the leave functionality
      */
-    private void setupLeaveButton(Button leaveButton) {
+    private void setupLeaveLobbyInteraction(Button leaveButton) {
         leaveButton.setOnClickListener(v -> {
             if (lobbyId == null) {
                 Toast.makeText(this, "Error: No lobby to leave", Toast.LENGTH_SHORT).show();
@@ -148,7 +163,7 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
                     Toast.makeText(this, "Left lobby successfully", Toast.LENGTH_SHORT).show();
                     
                     // Return to the main screen
-                    Intent intent = new Intent(this, MainActivity2.class);
+                    Intent intent = new Intent(this, SecondaryActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP); // Clear the back stack
                     startActivity(intent);
                     finish();
@@ -161,7 +176,7 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
         });
     }
     
-    private void setupStartGameButton() {
+    private void setupGameStartInteraction(Button gameStartButton) {
         gameStartButton.setOnClickListener(v -> {
             if (!isHost) {
                 Toast.makeText(LobbyActivity.this, "Only the host can start the game.", Toast.LENGTH_SHORT).show();
@@ -180,8 +195,10 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
             firebaseHandler.startGame(lobbyId, task -> {
                 if (task.isSuccessful()) {
                     Intent intent = new Intent(LobbyActivity.this, GameActivity.class); // Ensure GameActivity exists
-                    intent.putExtra("LOBBY_ID", lobbyId);
-                    intent.putExtra("IS_HOST", isHost);
+                    // Use the same constants as defined in GameActivity
+                    intent.putExtra("lobby_id", lobbyId);
+                    intent.putExtra("user_id", firebaseHandler.getCurrentUser().getUid());
+                    intent.putExtra("is_host", isHost);
                     startActivity(intent);
                     finish(); 
                 } else {
@@ -190,6 +207,31 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
                     Log.e(TAG, "Failed to start game", task.getException());
                 }
             });
+        });
+    }
+    
+    /**
+     * Sets up the settings button interaction for the host.
+     * Opens the LobbySettingsActivity when clicked if the current user is the host.
+     * 
+     * @param settingsButton The settings button to set up with the interaction
+     */
+    private void setupSettingsInteraction(Button settingsButton) {
+        settingsButton.setOnClickListener(v -> {
+            if (!isHost) {
+                Toast.makeText(LobbyActivity.this, "Only the host can access game settings.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            if (lobbyId == null) {
+                Toast.makeText(LobbyActivity.this, "Lobby ID is missing. Cannot access settings.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // Launch the settings activity
+            Intent intent = new Intent(LobbyActivity.this, LobbySettingsActivity.class);
+            intent.putExtra("lobby_id", lobbyId);
+            startActivity(intent);
         });
     }
 
@@ -319,8 +361,10 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
             if (lobby.getGameStarted() != null && lobby.getGameStarted()) {
                 Log.d(TAG, "Game has started, redirecting to GameActivity");
                 Intent intent = new Intent(LobbyActivity.this, GameActivity.class);
-                intent.putExtra("LOBBY_ID", lobbyId);
-                intent.putExtra("IS_HOST", isHost);
+                // Use the same constants as defined in GameActivity
+                intent.putExtra("lobby_id", lobbyId);
+                intent.putExtra("user_id", firebaseHandler.getCurrentUser().getUid());
+                intent.putExtra("is_host", isHost);
                 startActivity(intent);
                 finish();
                 return;
@@ -377,36 +421,97 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
         playerAdapter.notifyDataSetChanged();
     }
 
-    /**
-     * Callback triggered when a new player is detected as having been added to the lobby in Firebase.
-     * This implementation relies on {@link #onLobbyUpdated(Lobby)} for comprehensive updates,
-     * so this method primarily serves as a log point or for more granular UI updates if desired.
-     *
-     * @param player The {@link Player} object representing the added player.
-     */
-    @Override
+    private void updateLobbyCodeText() {
+        TextView lobbyCodeText = findViewById(R.id.lobbyNameTextView);
+        if (lobbyCodeText != null) {
+            lobbyCodeText.setText(lobbyId != null ? "Lobby Code: " + lobbyId : "Not in a lobby");
+        }
+    }
+
+    private void updatePlayerList() {
+        RecyclerView playerRecyclerView = findViewById(R.id.playerRecyclerView);
+        if (playerRecyclerView != null && playerAdapter != null) {
+            playerAdapter.notifyDataSetChanged();
+        }
+    }
+
+    private void updateLobbyUI() {
+        if (currentLobbyData == null) return;
+
+        // Update lobby name if available
+        if (currentLobbyData.getName() != null) {
+            TextView lobbyNameText = findViewById(R.id.lobbyNameTextView);
+            if (lobbyNameText != null) {
+                lobbyNameText.setText(currentLobbyData.getName());
+            }
+        }
+
+        // Update player count - commented out due to ID issues
+        // TextView playerCountText = findViewById(R.id.playerCountText);
+        // if (playerCountText != null) {
+        //     playerCountText.setText(getString(R.string.player_count, lobbyPlayers.size(), currentLobbyData.getMaxPlayers()));
+        // }
+
+        // Show/hide host controls based on isHost flag - commented out due to ID issues
+        // if (isHost) {
+        //     findViewById(R.id.lockLobbyButton).setVisibility(View.VISIBLE);
+        //     if (lobbyPlayers.size() >= currentLobbyData.getMinPlayers()) {
+        //         findViewById(R.id.startGameButton).setVisibility(View.VISIBLE);
+        //     } else {
+        //         findViewById(R.id.startGameButton).setVisibility(View.GONE);
+        //     }
+        // } else {
+        //     findViewById(R.id.lockLobbyButton).setVisibility(View.GONE);
+        //     findViewById(R.id.startGameButton).setVisibility(View.GONE);
+        // }
+
+        // Always show leave button for non-host players, and for host until game starts - commented out due to ID issues
+        // findViewById(R.id.leaveButton).setVisibility(View.VISIBLE);
+    }
+
+    public void onLobbyCreated(String lobbyId) {
+        this.lobbyId = lobbyId;
+        updateLobbyCodeText();
+        // findViewById(R.id.createLobbyButton).setVisibility(View.GONE);
+        // findViewById(R.id.joinLobbyButton).setVisibility(View.GONE);
+        // findViewById(R.id.leaveLobbyButton).setVisibility(View.VISIBLE);
+        // if (isHost) {
+        //     findViewById(R.id.startGameButton).setVisibility(View.VISIBLE);
+        // }
+    }
+
+    public void onLobbyJoined(String lobbyId, boolean asHost) {
+        this.lobbyId = lobbyId;
+        this.isHost = asHost;
+        updateLobbyCodeText();
+        // findViewById(R.id.createLobbyButton).setVisibility(View.GONE);
+        // findViewById(R.id.joinLobbyButton).setVisibility(View.GONE);
+        // findViewById(R.id.leaveLobbyButton).setVisibility(View.VISIBLE);
+        // if (isHost) {
+        //     findViewById(R.id.startGameButton).setVisibility(View.VISIBLE);
+        // }
+    }
+
+    public void onLobbyLeft() {
+        lobbyId = null;
+        isHost = false;
+        updateLobbyCodeText();
+        lobbyPlayers.clear();
+        updatePlayerList();
+        // findViewById(R.id.createLobbyButton).setVisibility(View.VISIBLE);
+        // findViewById(R.id.joinLobbyButton).setVisibility(View.VISIBLE);
+        // findViewById(R.id.leaveLobbyButton).setVisibility(View.GONE);
+        // findViewById(R.id.startGameButton).setVisibility(View.GONE);
+    }
+
     public void onPlayerAdded(Player player) {
         Log.d(TAG, "Player added event: " + player.getId() + ". Full update handled by onLobbyUpdated.");
     }
 
-    /**
-     * Callback triggered when a player is detected as having been removed from the lobby in Firebase.
-     * Similar to {@link #onPlayerAdded(Player)}, this relies on {@link #onLobbyUpdated(Lobby)} for list refreshing.
-     *
-     * @param playerId The UID of the player who was removed.
-     */
-    @Override
     public void onPlayerRemoved(String playerId) {
         Log.d(TAG, "Player removed event: " + playerId + ". Full update handled by onLobbyUpdated.");
     }
 
-    /**
-     * Callback triggered when the host of the lobby changes in Firebase.
-     * Updates the local {@code isHost} flag and refreshes host-specific UI controls.
-     *
-     * @param newHostId The UID of the new host.
-     */
-    @Override
     public void onHostChanged(String newHostId) {
        runOnUiThread(() -> {
             FirebaseUser currentUser = firebaseHandler.getCurrentUser();
@@ -422,11 +527,6 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
         });
     }
 
-    /**
-     * Callback triggered when the lobby is detected as having been deleted from Firebase.
-     * Notifies the user and closes the {@code LobbyActivity}.
-     */
-    @Override
     public void onLobbyDeleted() {
         runOnUiThread(() -> {
             Toast.makeText(LobbyActivity.this, "This lobby has been closed.", Toast.LENGTH_LONG).show();
@@ -435,13 +535,6 @@ public class LobbyActivity extends AppCompatActivity implements FirebaseHandler.
         });
     }
 
-    /**
-     * Callback triggered when an error occurs within the Firebase lobby listener.
-     * Logs the error, displays a message to the user, and typically closes the activity.
-     *
-     * @param message A descriptive message of the error that occurred.
-     */
-    @Override
     public void onError(String message) {
         runOnUiThread(() -> {
             Log.e(TAG, "Lobby listener error: " + message);

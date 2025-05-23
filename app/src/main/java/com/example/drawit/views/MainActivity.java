@@ -1,4 +1,4 @@
-package com.example.drawit;
+package com.example.drawit.views;
 
 import android.content.Context;
 import android.content.Intent;
@@ -8,6 +8,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import com.example.drawit.R;
+import com.example.drawit.game.FirebaseHandler;
+import com.example.drawit.views.SecondaryActivity;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -131,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void startMainActivity() {
         try {
-            Intent intent = new Intent(MainActivity.this, MainActivity2.class);
+            Intent intent = new Intent(MainActivity.this, SecondaryActivity.class);
             // Add flags to create a new task and clear the previous ones
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);

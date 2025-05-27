@@ -1,6 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DrawIt</string>
-    <string name="DrawIt">DrawIt</string>
-    <!-- TODO: Remove or change this placeholder text -->
-    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="action_settings">Settings</string>
+    <string name="first_fragment_label">First Fragment</string>
+    <string name="second_fragment_label">Second Fragment</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="lorem_ipsum">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</string>
+    
+    <!-- Lobby strings -->
+    <string name="lobbies">Lobbies</string>
+    <string name="create_lobby">Create Lobby</string>
+    <string name="join_lobby">Join</string>
+    <string name="leave_lobby">Leave</string>
+    <string name="lobby_name">Lobby Name</string>
+    <string name="max_players">Max Players</string>
+    <string name="rounds">Rounds</string>
+    <string name="round_duration">Round Duration (seconds)</string>
+    <string name="lock_lobby">Lock Lobby</string>
+    <string name="unlock_lobby">Unlock Lobby</string>
+    <string name="start_game">Start Game</string>
+    <string name="lobby_settings">Lobby Settings</string>
+    <string name="players">Players</string>
+    <string name="host">Host</string>
+    <string name="refresh">Refresh</string>
+    <string name="no_lobbies_found">No lobbies found. Create one?</string>
+    <string name="waiting_for_host_to_start">Waiting for host to start the game</string>
+    <string name="player_avatar">Player Avatar</string>
+    <string name="lobby_locked">Lobby is locked</string>
+    <string name="player_status">Player status</string>
+    
+    <!-- Lobby error messages -->
+    <string name="error_lobby_name_required">Lobby name is required</string>
+    <string name="error_lobby_name_too_short">Lobby name must be at least 3 characters</string>
+    <string name="error_lobby_name_too_long">Lobby name cannot exceed 30 characters</string>
+    <string name="error_field_required">This field is required</string>
+    <string name="error_invalid_max_players">Max players must be between 2 and 4</string>
+    <string name="error_invalid_number">Invalid number</string>
+    <string name="error_invalid_rounds">Number of rounds must be between 1 and 5</string>
+    <string name="error_invalid_duration">Duration must be between 30 and 180 seconds</string>
+    <string name="error_duration_increment">Duration must be in 30-second increments (30, 60, 90, etc.)</string>
+    
+    <!-- General UI strings -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="create">Create</string>
+    <string name="back">Back</string>
+    
+    <!-- Login and Profile -->
+    <string name="login">Log In</string>
+    <string name="register">Register</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="email">Email</string>
+    <string name="profile">Profile</string>
+    <string name="logout">Log Out</string>
+    <string name="app_logo">App Logo</string>
+    <string name="login_subtitle">Sign in to your account</string>
+    <string name="register_prompt">Need an account? Register</string>
+    <string name="register_title">Create Account</string>
+    <string name="register_subtitle">Create a new account</string>
+    <string name="login_prompt">Already have an account? Log in</string>
+    <string name="back_to_login">Back to Login</string>
+    <string name="profile_image">Profile Image</string>
+    <string name="change_avatar">Change Avatar</string>
+    <string name="user_information">User Information</string>
+    <string name="statistics">Statistics</string>
+    <string name="games_played">Games Played</string>
+    <string name="games_won">Games Won</string>
+    <string name="average_rating">Average Rating</string>
+    <string name="win_rate">Win Rate</string>
+    <string name="update_profile">Update Profile</string>
+    <string name="change_password">Change Password</string>
+    
+    <!-- Lobby strings -->
+    <string name="error_not_host">Only the host can perform this action</string>
+    <string name="player_count_format">%1$d/%2$d Players</string>
+    
+    <!-- Drawing Archive and Drawing Details -->
+    <string name="drawing_archive">Drawing Archive</string>
+    <string name="no_drawings">No drawings found</string>
+    <string name="no_drawings_found">No drawings found</string>
+    <string name="search_drawings">Search by word</string>
+    <string name="drawing">Drawing</string>
+    <string name="drawing_info">Drawing Information</string>
+    <string name="drawing_details">Drawing Details</string>
+    <string name="artist">Artist</string>
+    <string name="word">Word</string>
+    <string name="date">Date</string>
+    <string name="game">Game</string>
+    <string name="ratings">Ratings</string>
+    <string name="share_drawing">Share Drawing</string>
+    <string name="download_drawing">Download Drawing</string>
+    <string name="created_on">Created on: %1$s</string>
+    <string name="word_drawn">Word: %1$s</string>
+    <string name="download">Download</string>
+    <string name="share">Share</string>
+    <string name="drawing_thumbnail">Drawing Thumbnail</string>
+    
+    <!-- Game and Drawing strings -->
+    <string name="spectator_mode">SPECTATOR MODE</string>
+    <string name="system">System</string>
+    <string name="correct_guess">Correct guess!</string>
+    <string name="close_guess">Close guess!</string>
+    <string name="clear_canvas">Clear</string>
+    <string name="undo">Undo</string>
+    <string name="submit_drawing">Submit Drawing</string>
+    <string name="your_word">Your word to draw:</string>
+    <string name="time_remaining">Time remaining:</string>
+    <string name="round">Round:</string>
+    <string name="round_format">%1$d/%2$d</string>
+    <string name="current_drawer_format">%s</string>
+    <string name="your_turn_to_draw">Your turn to draw!</string>
+    <string name="guess_the_word">Guess the word!</string>
+    <string name="vote">Vote</string>
+    <string name="rate_drawing">Rate this drawing (1-5)</string>
+    <string name="results">Results</string>
+    <string name="clear">Clear</string>
+    <string name="send">Send</string>
+    <string name="type_your_guess">Type your guess here...</string>
+    <string name="leaderboard">Leaderboard</string>
+    <string name="player_score">%1$s: %2$.1f</string>
+    <string name="next_round">Next Round</string>
+    <string name="game_over">Game Over</string>
+    <string name="back_to_lobby">Back to Lobby</string>
+    <string name="waiting_for_players">Waiting for players</string>
+    <string name="drawing_phase">Drawing Phase</string>
+    <string name="voting_phase">Voting Phase</string>
+    <string name="game_in_progress">Game in Progress</string>
+    <string name="current_player">Current Player</string>
+    <string name="rate_this_drawing">Rate this Drawing</string>
+    <string name="submit_rating">Submit Rating</string>
+    <string name="drawing_to_rate">Drawing to Rate</string>
+    <string name="game_results">Game Results</string>
+    <string name="end_game">End Game</string>
+    <string name="waiting_for_host">Waiting for host</string>
+    <string name="game_id_format">Game ID: %1$s</string>
+    <string name="rounds_completed_format">Rounds Completed: %1$d/%2$d</string>
+    <string name="participants_format">Participants: %1$d</string>
+    <string name="winner_format">Winner: %1$s</string>
+    
+    <!-- Drawing tools strings -->
+    <string name="brush_size">Brush Size</string>
+    <string name="color">Color</string>
+    <string name="small">Small</string>
+    <string name="medium">Medium</string>
+    <string name="large">Large</string>
 </resources>

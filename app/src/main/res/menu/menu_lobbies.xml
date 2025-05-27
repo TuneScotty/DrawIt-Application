@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    
+    <item
+        android:id="@+id/action_profile"
+        android:icon="@android:drawable/ic_menu_myplaces"
+        android:orderInCategory="100"
+        android:title="@string/profile"
+        app:showAsAction="ifRoom" />
+    
+    <item
+        android:id="@+id/action_drawing_archive"
+        android:icon="@android:drawable/ic_menu_gallery"
+        android:orderInCategory="200"
+        android:title="@string/drawing_archive"
+        app:showAsAction="ifRoom" />
+    
+    <item
+        android:id="@+id/action_refresh"
+        android:icon="@android:drawable/ic_menu_rotate"
+        android:orderInCategory="300"
+        android:title="@string/refresh"
+        app:showAsAction="ifRoom" />
+    
+</menu>

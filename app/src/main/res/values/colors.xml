@@ -1,13 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#7F49BC</color>
-    <color name="primary_dark">#5E35B1</color>
-    <color name="primary_light">#9C6AE1</color>
-    <color name="accent">#AA00FF</color>
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#CCFFFFFF</color>
-    <color name="background_dark">#121212</color>
-    <color name="surface_dark">#1E1E1E</color>
+    <!-- Base colors -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- Theme colors -->
+    <color name="primary">#6200EA</color>
+    <color name="primary_dark">#3700B3</color>
+    <color name="primary_light">#BB86FC</color>
+    <color name="accent">#03DAC5</color>
+    <color name="error">#CF6679</color>
+    
+    <!-- Background colors -->
+    <color name="background">#121212</color>
+    <color name="background_light">#2D2D2D</color>
+    <color name="background_translucent">#80000000</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="card">#2D2D2D</color>
+    
+    <!-- Text colors -->
+    <color name="text_primary">#DEFFFFFF</color>
+    <color name="text_secondary">#99FFFFFF</color>
+    <color name="text_hint">#61FFFFFF</color>
+    
+    <!-- Drawing colors -->
+    <color name="drawing_black">#FF000000</color>
+    <color name="drawing_white">#FFFFFFFF</color>
+    <color name="drawing_red">#FFF44336</color>
+    <color name="drawing_pink">#FFE91E63</color>
+    <color name="drawing_purple">#FF9C27B0</color>
+    <color name="drawing_deep_purple">#FF673AB7</color>
+    <color name="drawing_indigo">#FF3F51B5</color>
+    <color name="drawing_blue">#FF2196F3</color>
+    <color name="drawing_light_blue">#FF03A9F4</color>
+    <color name="drawing_cyan">#FF00BCD4</color>
+    <color name="drawing_teal">#FF009688</color>
+    <color name="drawing_green">#FF4CAF50</color>
+    <color name="drawing_light_green">#FF8BC34A</color>
+    <color name="drawing_lime">#FFCDDC39</color>
+    <color name="drawing_yellow">#FFFFEB3B</color>
+    <color name="drawing_amber">#FFFFC107</color>
+    <color name="drawing_orange">#FFFF9800</color>
+    <color name="drawing_deep_orange">#FFFF5722</color>
+    <color name="drawing_brown">#FF795548</color>
+    <color name="drawing_grey">#FF9E9E9E</color>
+    <color name="drawing_blue_grey">#FF607D8B</color>
+    
+    <!-- Status colors -->
+    <color name="success">#4CAF50</color>
+    <color name="warning">#FFC107</color>
+    
+    <!-- Medal colors -->
+    <color name="colorGold">#FFD700</color>
+    <color name="colorSilver">#C0C0C0</color>
+    <color name="colorBronze">#CD7F32</color>
+    <color name="colorBackground">@color/background</color>
+    
+    <!-- Color aliases for backward compatibility -->
+    <color name="colorPrimary">@color/primary</color>
+    <color name="colorError">@color/error</color>
+    <color name="colorText">@color/text_primary</color>
+    <color name="colorSuccess">@color/success</color>
+    <color name="colorWarning">@color/warning</color>
+    <color name="info">#2196F3</color>
 </resources>

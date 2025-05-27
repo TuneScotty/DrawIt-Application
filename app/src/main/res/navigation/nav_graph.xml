@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <!-- Authentication Flow -->
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.example.drawit_app.view.auth.LoginFragment"
+        android:label="@string/login"
+        tools:layout="@layout/fragment_login">
+
+        <action
+            android:id="@+id/action_loginFragment_to_registerFragment"
+            app:destination="@id/registerFragment" />
+        <action
+            android:id="@+id/action_loginFragment_to_lobbiesFragment"
+            app:destination="@id/lobbiesFragment"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/registerFragment"
+        android:name="com.example.drawit_app.view.auth.RegisterFragment"
+        android:label="@string/register"
+        tools:layout="@layout/fragment_register">
+
+        <action
+            android:id="@+id/action_registerFragment_to_loginFragment"
+            app:destination="@id/loginFragment" />
+    </fragment>
+    
+    <!-- Main App Flow -->
+    <fragment
+        android:id="@+id/lobbiesFragment"
+        android:name="com.example.drawit_app.view.lobby.LobbiesFragment"
+        android:label="@string/lobbies"
+        tools:layout="@layout/fragment_lobbies">
+
+        <action
+            android:id="@+id/action_lobbiesFragment_to_lobbyDetailFragment"
+            app:destination="@id/lobbyDetailFragment" />
+        <action
+            android:id="@+id/action_lobbiesFragment_to_profileFragment"
+            app:destination="@id/profileFragment" />
+        <action
+            android:id="@+id/action_lobbiesFragment_to_drawingArchiveFragment"
+            app:destination="@id/drawingArchiveFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/lobbyDetailFragment"
+        android:name="com.example.drawit_app.view.lobby.LobbyDetailFragment"
+        android:label="{lobbyName}"
+        tools:layout="@layout/fragment_lobby_detail">
+
+        <argument
+            android:name="lobbyId"
+            app:argType="string" />
+        <argument
+            android:name="lobbyName"
+            app:argType="string" />
+        <action
+            android:id="@+id/action_lobbyDetailFragment_to_gameFragment"
+            app:destination="@id/gameFragment"
+            app:popUpTo="@id/lobbiesFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.example.drawit_app.view.auth.ProfileFragment"
+        android:label="@string/profile"
+        tools:layout="@layout/fragment_profile">
+
+        <action
+            android:id="@+id/action_profileFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+            
+        <!-- Add back navigation to lobbies -->
+        <action
+            android:id="@+id/action_profileFragment_to_lobbiesFragment"
+            app:destination="@id/lobbiesFragment"
+            app:popUpTo="@id/lobbiesFragment"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/drawingArchiveFragment"
+        android:name="com.example.drawit_app.view.archive.DrawingArchiveFragment"
+        android:label="@string/drawing_archive"
+        tools:layout="@layout/fragment_drawing_archive">
+
+        <action
+            android:id="@+id/action_drawingArchiveFragment_to_drawingDetailFragment"
+            app:destination="@id/drawingDetailFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/drawingDetailFragment"
+        android:name="com.example.drawit_app.view.archive.DrawingDetailFragment"
+        android:label="@string/drawing_details"
+        tools:layout="@layout/fragment_drawing_detail">
+
+        <argument
+            android:name="drawingId"
+            app:argType="string" />
+    </fragment>
+
+    <!-- Game Flow -->
+    <fragment
+        android:id="@+id/gameFragment"
+        android:name="com.example.drawit_app.view.game.GameFragment"
+        android:label="@string/game_in_progress"
+        tools:layout="@layout/fragment_game">
+
+        <argument
+            android:name="gameId"
+            app:argType="string" />
+        <action
+            android:id="@+id/action_gameFragment_to_gameResultsFragment"
+            app:destination="@id/gameResultsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/gameResultsFragment"
+        android:name="com.example.drawit_app.view.game.GameResultsFragment"
+        android:label="@string/game_results"
+        tools:layout="@layout/fragment_game_results">
+
+        <argument
+            android:name="gameId"
+            app:argType="string" />
+        <action
+            android:id="@+id/action_gameResultsFragment_to_lobbiesFragment"
+            app:destination="@id/lobbiesFragment"
+            app:popUpTo="@id/lobbiesFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+</navigation>

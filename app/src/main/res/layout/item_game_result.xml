@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    
+    <data>
+        <variable
+            name="player"
+            type="com.example.drawit_app.model.User" />
+        <variable
+            name="score"
+            type="Float" />
+    </data>
+    
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardResult"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+        
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp">
+            
+            <TextView
+                android:id="@+id/tvRank"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/circle_background"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                tools:text="1" />
+
+            <ImageView
+                android:id="@+id/ivMedal"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@string/player_avatar"
+                android:visibility="gone"
+                app:layout_constraintEnd_toEndOf="@id/tvRank"
+                app:layout_constraintTop_toTopOf="@id/tvRank"
+                app:layout_constraintStart_toStartOf="@id/tvRank"
+                app:layout_constraintBottom_toBottomOf="@id/tvRank"
+                tools:src="@drawable/ic_medal_gold"
+                tools:visibility="visible" />
+            
+            <ImageView
+                android:id="@+id/iv_player_avatar"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="16dp"
+                android:contentDescription="@string/player_avatar"
+                app:layout_constraintStart_toEndOf="@id/tvRank"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                tools:src="@android:drawable/ic_menu_gallery" />
+            
+            <TextView
+                android:id="@+id/tvPlayerName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:layout_constraintStart_toEndOf="@id/iv_player_avatar"
+                app:layout_constraintTop_toTopOf="@id/iv_player_avatar"
+                app:layout_constraintEnd_toStartOf="@id/tvScore"
+                app:layout_constraintBottom_toTopOf="@id/tvStatistics"
+                tools:text="PlayerName" />
+            
+            <TextView
+                android:id="@+id/tvStatistics"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:textSize="12sp"
+                app:layout_constraintStart_toEndOf="@id/iv_player_avatar"
+                app:layout_constraintTop_toBottomOf="@id/tvPlayerName"
+                app:layout_constraintEnd_toStartOf="@id/tvScore"
+                app:layout_constraintBottom_toBottomOf="@id/iv_player_avatar"
+                tools:text="Correct guesses: 5 | Avg. drawing rating: 4.2" />
+            
+            <TextView
+                android:id="@+id/tvCorrectGuesses"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                tools:text="5" />
+                
+            <TextView
+                android:id="@+id/tvDrawingRating"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                tools:text="4.2" />
+            
+            <TextView
+                android:id="@+id/tvScore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                tools:text="125" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
+</layout>

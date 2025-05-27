@@ -2,6 +2,11 @@
 .gradle/
 build/
 */build/
+.gradle
+gradlew
+gradlew.bat
+gradle-wrapper.jar
+gradle-wrapper.properties
 
 # Android Studio
 *.iml
@@ -13,8 +18,23 @@ build/
 .idea/runConfigurations/
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
+.idea/deploymentTargetDropDown.xml
+.idea/dictionaries
+.idea/libraries/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/.name
+.idea/compiler.xml
+.idea/copyright/profiles_settings.xml
+.idea/encodings.xml
+.idea/scopes/scope_settings.xml
+.idea/vcs.xml
+*.ipr
+*.iws
 local.properties
 captures/
+.navigation/
+output.json
 
 # Keystore files
 *.jks
@@ -23,22 +43,72 @@ captures/
 # NDK files
 .cxx/
 */build/intermediates/cxx/
+obj/
 
 # Log files
 *.log
+.externalNativeBuild
+.cxx
 
 # APK/AAB files
 *.apk
 *.aab
 *.ap_
+release/
 
-# Other
+# Generated files
+bin/
+gen/
+out/
+
+# Java class files
+*.class
+
+# Proguard
+proguard/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# OS-specific files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 *~
 *.swp
+*.swo
 
-# VS Code
+# IDE
 .vscode/
+.classpath
+.project
+.settings/
+.idea/sonarlint/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/readme.md
+
+# Google Services
+google-services.json
+GoogleService-Info.plist
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Temp files
+tmp/
+temp/
 
 # Codeium
 windsurfrules

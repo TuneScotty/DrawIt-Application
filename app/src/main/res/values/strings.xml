@@ -99,6 +99,21 @@
     <string name="share">Share</string>
     <string name="drawing_thumbnail">Drawing Thumbnail</string>
     
+    <!-- Numeric values -->
+    <string name="number_1">1</string>
+    <string name="number_2">2</string>
+    <string name="number_3">3</string>
+    <string name="number_4">4</string>
+    <string name="number_5">5</string>
+    <string name="number_60">60</string>
+    
+    <!-- Lobby detail strings -->
+    <string name="host_label">Host:</string>
+    <string name="rounds_label">Rounds:</string>
+    <string name="round_duration_label">Round Duration:</string>
+    <string name="players_label">Players</string>
+    <string name="start_game_button">Start Game</string>
+    
     <!-- Game and Drawing strings -->
     <string name="spectator_mode">SPECTATOR MODE</string>
     <string name="system">System</string>

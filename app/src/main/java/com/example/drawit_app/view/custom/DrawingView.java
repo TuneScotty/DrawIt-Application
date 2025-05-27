@@ -152,11 +152,22 @@ public class DrawingView extends View {
                 // Reset current path
                 currentPath.reset();
                 invalidate();
+                
+                // Call performClick for accessibility
+                performClick();
                 return true;
                 
             default:
                 return false;
         }
+    }
+    
+    @Override
+    public boolean performClick() {
+        // Call the super implementation, which generates an AccessibilityEvent
+        // and calls the onClick() listener on the view, if any
+        super.performClick();
+        return true;
     }
     
     /**

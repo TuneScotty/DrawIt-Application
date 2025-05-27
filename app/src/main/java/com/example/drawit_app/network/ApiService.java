@@ -6,6 +6,7 @@ import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
 import com.example.drawit_app.network.request.AuthRequest;
 import com.example.drawit_app.network.request.CreateLobbyRequest;
+import com.example.drawit_app.network.request.JoinLobbyRequest;
 import com.example.drawit_app.network.request.RateDrawingRequest;
 import com.example.drawit_app.network.request.RegisterRequest;
 import com.example.drawit_app.network.request.UpdateProfileRequest;
@@ -58,7 +59,7 @@ public interface ApiService {
     Call<ApiResponse<Lobby>> getLobbyDetails(@Header("Authorization") String token, @Path("lobbyId") String lobbyId);
     
     @POST("lobbies/{lobbyId}/join")
-    Call<ApiResponse<Lobby>> joinLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId);
+    Call<ApiResponse<Lobby>> joinLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId, JoinLobbyRequest joinLobbyRequest);
     
     @DELETE("lobbies/{lobbyId}/leave")
     Call<ApiResponse<Void>> leaveLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId);

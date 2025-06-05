@@ -31,8 +31,6 @@ public class DrawingRepository extends BaseRepository {
     @Override
     public void onFailure(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<com.example.drawit_app.network.response.LobbyListResponse>> call, Throwable t) {
         android.util.Log.e("DrawingRepository", "API call failed: " + t.getMessage(), t);
-        // Optionally, update a LiveData or some state to reflect this failure
-        // For example: setError("Failed to perform drawing operation: " + t.getMessage());
     }
 
     
@@ -225,9 +223,7 @@ public class DrawingRepository extends BaseRepository {
             
             // Call the original method with the game ID and observe its result
             LiveData<Resource<Drawing>> ratingResult = rateDrawing(gameId, drawingId, (float)rating);
-            observeOnce(ratingResult, resource -> {
-                result.setValue(resource);
-            });
+            observeOnce(ratingResult, result::setValue);
         });
         
         return result;

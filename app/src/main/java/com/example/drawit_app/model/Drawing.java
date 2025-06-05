@@ -37,7 +37,7 @@ public class Drawing {
     
     // Transient fields not stored in database
     private transient User artist; // User who created this drawing
-    private transient String imagePath; // JSON representation of the drawing for rendering
+    private transient String imagePath;
     
     public Drawing() {
         this.paths = new ArrayList<>();

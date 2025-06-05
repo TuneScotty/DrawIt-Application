@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MediatorLiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -35,6 +36,8 @@ import java.util.Map;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+
+import retrofit2.Response;
 
 /**
  * Repository for lobby-related operations with WebSocket support
@@ -88,7 +91,7 @@ public class LobbyRepository extends BaseRepository {
         boolean isExpired() {
             return System.currentTimeMillis() - timestamp > CACHE_EXPIRY_MS;
         }
-        
+
         /**
          * Get the cached lobby object
          * @return The lobby object
@@ -151,17 +154,17 @@ public class LobbyRepository extends BaseRepository {
      */
     private void setupWebSocketCallback() {
         Log.d(TAG, "Setting up WebSocket callback");
-        
+
         // CRITICAL FIX: Set the authentication token before connecting
         String authToken = userRepository.getAuthToken();
         if (authToken != null && !authToken.isEmpty()) {
-            Log.i(TAG, "🔑 Setting WebSocket auth token: " + 
+            Log.i(TAG, "🔑 Setting WebSocket auth token: " +
                   (authToken.length() > 5 ? authToken.substring(0, 5) + "..." : "[short token]"));
             webSocketService.setAuthToken(authToken);
         } else {
             Log.w(TAG, "⚠️ No valid auth token available for WebSocket connection");
         }
-        
+
         // Make sure WebSocket is connected (this will use the auth token we just set)
         if (!webSocketService.isConnected()) {
             webSocketService.connect();
@@ -172,13 +175,13 @@ public class LobbyRepository extends BaseRepository {
             public void onLobbiesUpdated(com.example.drawit_app.network.message.LobbiesUpdateMessage message) {
                 if (message != null && message.getLobbiesPayload().getLobbies() != null) {
                     Log.d(TAG, "Received lobby list update via WebSocket with " + message.getLobbiesPayload().getLobbies().size() + " lobbies");
-                    
+
                     // Process the updated lobby list
                     appExecutors.diskIO().execute(() -> {
                         // Use the WebSocketMessageConverter to safely convert the raw lobby objects to Lobby instances
                         List<Lobby> updatedLobbies = messageConverter.convertToLobbyList(message.getLobbiesPayload().getLobbies());
                         Log.d(TAG, "Successfully converted " + updatedLobbies.size() + " lobbies using WebSocketMessageConverter");
-                        
+
                         // Update each lobby in the database
                         for (Lobby lobby : updatedLobbies) {
                             // Apply local settings
@@ -190,21 +193,21 @@ public class LobbyRepository extends BaseRepository {
                             // Save to database
                             lobbyDao.insert(lobby);
                         }
-                        
+
                         // Update the available lobbies list on the main thread
                         new Handler(Looper.getMainLooper()).post(() -> {
                             Log.d(TAG, "Updating availableLobbies LiveData with " + updatedLobbies.size() + " lobbies");
                             availableLobbies.setValue(updatedLobbies);
                         });
                     });
-                    
+
                     // Forward to external callback if present
                     if (externalCallback != null) {
                         externalCallback.onLobbiesUpdated(message);
                     }
                 }
             }
-            
+
             @Override
             public void onLobbyStateChanged(LobbyStateMessage message) {
                 if (message != null && message.getLobbyPayload() != null &&
@@ -213,11 +216,11 @@ public class LobbyRepository extends BaseRepository {
                     Lobby updatedLobby = message.getLobbyPayload().getLobby();
                     String lobbyId = updatedLobby.getLobbyId();
                     String event = message.getLobbyPayload().getEvent();
-                    
+
                     // Enhanced logging with emoji for visibility and consistent format
-                    Log.i(TAG, "🔔 WEBSOCKET EVENT: " + (event != null ? event : "update") + 
+                    Log.i(TAG, "🔔 WEBSOCKET EVENT: " + (event != null ? event : "update") +
                           " for lobby " + lobbyId + " (" + updatedLobby.getLobbyName() + ")");
-                    
+
                     // Log detailed timestamp for correlation with server logs
                     String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
                         .format(new java.util.Date());
@@ -225,14 +228,14 @@ public class LobbyRepository extends BaseRepository {
 
                     // Log player list details with clear formatting
                     if (updatedLobby.getPlayers() != null) {
-                        Log.i(TAG, "👥 PLAYERS LIST FROM WEBSOCKET: " + updatedLobby.getPlayers().size() + 
+                        Log.i(TAG, "👥 PLAYERS LIST FROM WEBSOCKET: " + updatedLobby.getPlayers().size() +
                               " players in lobby " + updatedLobby.getLobbyId());
                         for (User player : updatedLobby.getPlayers()) {
-                            Log.i(TAG, "   👤 Player: " + player.getUsername() + 
+                            Log.i(TAG, "   👤 Player: " + player.getUsername() +
                                   " (ID: " + player.getUserId() + ")");
                         }
                     } else {
-                        Log.e(TAG, "⚠️ WEBSOCKET ERROR: Lobby " + updatedLobby.getLobbyId() + 
+                        Log.e(TAG, "⚠️ WEBSOCKET ERROR: Lobby " + updatedLobby.getLobbyId() +
                               " has NULL players list! This indicates a potential server issue.");
                     }
 
@@ -331,7 +334,7 @@ public class LobbyRepository extends BaseRepository {
                         // Check if this update is for a player joining/leaving
                         if (event != null && (event.equals("player_joined") || event.equals("player_left"))) {
                             Log.i(TAG, "🎮 Player " + event.replace("player_", "") + " event detected in " + updatedLobby.getLobbyName());
-                            
+
                             // Prefetch host user data to avoid "Unknown Host" display in UI
                             if (updatedLobby.getHostId() != null) {
                                 String hostId = updatedLobby.getHostId();
@@ -340,7 +343,7 @@ public class LobbyRepository extends BaseRepository {
                                 userRepository.getUserById(hostId);
                             }
                         }
-                        
+
                         // Broadcast on main thread to ensure UI updates properly
                         Handler mainHandler = new Handler(Looper.getMainLooper());
                         mainHandler.post(() -> {
@@ -375,68 +378,64 @@ public class LobbyRepository extends BaseRepository {
                             // This eliminates complex merging logic that could cause inconsistencies
                             if (updatedLobby.getPlayers() != null) {
                                 // Log incoming player list
-                                Log.i(TAG, "📋 LOBBY UPDATE: Received player list with " + 
+                                Log.i(TAG, "📋 LOBBY UPDATE: Received player list with " +
                                       updatedLobby.getPlayers().size() + " players");
-                                
+
                                 // For player events specifically (join/leave), add extra detailed logging
-                                boolean isPlayerEvent = event != null && 
+                                boolean isPlayerEvent = event != null &&
                                     (event.equals("player_joined") || event.equals("player_left"));
-                                
+
                                 if (isPlayerEvent) {
                                     Log.i(TAG, "👤 PLAYER EVENT: " + event + " in lobby " + lobbyId);
-                                    Log.i(TAG, "🔄 Player list BEFORE: " + 
-                                          (currentLobbyValue.getPlayers() != null ? 
+                                    Log.i(TAG, "🔄 Player list BEFORE: " +
+                                          (currentLobbyValue.getPlayers() != null ?
                                            currentLobbyValue.getPlayers().size() : 0) + " players");
-                                    Log.i(TAG, "🔄 Player list AFTER: " + 
+                                    Log.i(TAG, "🔄 Player list AFTER: " +
                                           updatedLobby.getPlayers().size() + " players");
-                                    
+
                                     if (event.equals("player_joined")) {
                                         // Try to identify the new player
                                         if (currentLobbyValue.getPlayers() != null) {
                                             for (User newPlayer : updatedLobby.getPlayers()) {
                                                 boolean isNew = true;
                                                 for (User existingPlayer : currentLobbyValue.getPlayers()) {
-                                                    if (existingPlayer.getUserId() != null && 
-                                                        existingPlayer.getUserId().equals(newPlayer.getUserId())) {
+                                                    if (existingPlayer.getUserId().equals(newPlayer.getUserId())) {
                                                         isNew = false;
                                                         break;
                                                     }
                                                 }
                                                 if (isNew) {
-                                                    Log.i(TAG, "✅ NEW PLAYER JOINED: " + 
-                                                          newPlayer.getUsername() + 
+                                                    Log.i(TAG, "✅ NEW PLAYER JOINED: " +
+                                                          newPlayer.getUsername() +
                                                           " (ID: " + newPlayer.getUserId() + ")");
                                                 }
                                             }
                                         }
-                                    } else if (event.equals("player_left")) {
+                                    } else {
                                         // Try to identify who left
                                         if (currentLobbyValue.getPlayers() != null) {
                                             for (User existingPlayer : currentLobbyValue.getPlayers()) {
                                                 boolean stillPresent = false;
                                                 for (User remainingPlayer : updatedLobby.getPlayers()) {
-                                                    if (existingPlayer.getUserId() != null && 
-                                                        existingPlayer.getUserId().equals(remainingPlayer.getUserId())) {
+                                                    if (existingPlayer.getUserId().equals(remainingPlayer.getUserId())) {
                                                         stillPresent = true;
                                                         break;
                                                     }
                                                 }
                                                 if (!stillPresent) {
-                                                    Log.i(TAG, "❌ PLAYER LEFT: " + 
-                                                          existingPlayer.getUsername() + 
+                                                    Log.i(TAG, "❌ PLAYER LEFT: " +
+                                                          existingPlayer.getUsername() +
                                                           " (ID: " + existingPlayer.getUserId() + ")");
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                
-                                // IMPORTANT FIX: Simply use the server's player list directly
-                                // Force a new ArrayList instance to ensure LiveData detects the change
-                                Log.i(TAG, "📊 UPDATING UI with latest player list: " + 
+
+                                Log.i(TAG, "📊 UPDATING UI with latest player list: " +
                                       updatedLobby.getPlayers().size() + " players");
                                 updatedCopy.setPlayers(new ArrayList<>(updatedLobby.getPlayers()));
-                                
+
                             } else if (currentLobbyValue.getPlayers() != null) {
                                 // Only if server sent null players (error case), preserve existing list
                                 Log.w(TAG, "⚠️ Server sent null player list, preserving current list");
@@ -466,21 +465,21 @@ public class LobbyRepository extends BaseRepository {
                     }
                 }
             }
-            
+
             @Override
             public void onGameStateChanged(GameStateMessage message) {
                 if (message != null && message.getGamePayload() != null && message.getGamePayload().getGame() != null) {
                     String gameId = message.getGamePayload().getGame().getGameId();
                     String event = message.getGamePayload().getEvent();
-                    
-                    Log.i(TAG, "🎮 GAME STATE EVENT: " + (event != null ? event : "update") + 
+
+                    Log.i(TAG, "🎮 GAME STATE EVENT: " + (event != null ? event : "update") +
                           " for game " + gameId);
-                          
+
                     // Log detailed timestamp for game events
                     String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
                         .format(new java.util.Date());
                     Log.i(TAG, "⏰ Game state update received at: " + timestamp);
-                    
+
                     // Forward to external callback if present
                     if (externalCallback != null) {
                         externalCallback.onGameStateChanged(message);
@@ -529,7 +528,7 @@ public class LobbyRepository extends BaseRepository {
         MutableLiveData<Resource<LobbyListResponse>> result = new MutableLiveData<>();
         result.setValue(Resource.loading(null));
 
-        apiService.getLobbies("Bearer " + token).enqueue(new retrofit2.Callback<ApiResponse<LobbyListResponse>>() {
+        apiService.getLobbies("Bearer " + token).enqueue(new retrofit2.Callback<>() {
             @Override
             public void onResponse(retrofit2.Call<ApiResponse<LobbyListResponse>> call, retrofit2.Response<ApiResponse<LobbyListResponse>> response) {
                 if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
@@ -564,8 +563,8 @@ public class LobbyRepository extends BaseRepository {
                     // DEBUG: Print out details of each lobby from API
                     for (Lobby lobby : lobbies) {
                         Log.d(TAG, "DEBUG: API lobby - ID: " + lobby.getLobbyId() +
-                              ", Name: " + lobby.getLobbyName() +
-                              ", JSON annotation working? " + (lobby.getLobbyName() != null));
+                                ", Name: " + lobby.getLobbyName() +
+                                ", JSON annotation working? " + (lobby.getLobbyName() != null));
                     }
 
                     // Update database in background
@@ -617,54 +616,53 @@ private void ensureHostInPlayerList(Lobby lobby) {
         Log.d(TAG, "ensureHostInPlayerList: lobby or hostId is null, returning.");
         return;
     }
-    
+
     // Initialize player list if null
     if (lobby.getPlayers() == null) {
         lobby.setPlayers(new ArrayList<>());
         Log.d(TAG, "Initialized empty player list for lobby: " + lobby.getLobbyId());
     }
-    
+
     // Log current state for debugging
     Log.d(TAG, "Checking host in player list for lobby: " + lobby.getLobbyId() + ", host: " + lobby.getHostId() + ", current player count: " + lobby.getPlayers().size());
-    
+
     // Check if host is already in the player list
     boolean hostFound = false;
     for (User player : lobby.getPlayers()) {
-        if (player != null && player.getUserId() != null && 
-            player.getUserId().equals(lobby.getHostId())) {
+        if (player != null && player.getUserId().equals(lobby.getHostId())) {
             hostFound = true;
             Log.d(TAG, "Host already in player list: " + player.getUsername() + " (ID: " + player.getUserId() + ")");
             break;
         }
     }
-    
+
     // Only add the host if they're not already in the list
     if (!hostFound) {
         // First try to get host from lobby.getHost()
         User hostUser = lobby.getHost();
-        
+
         // If host object doesn't exist or doesn't have userId matching hostId, create a minimal host user
-        if (hostUser == null || hostUser.getUserId() == null || !hostUser.getUserId().equals(lobby.getHostId())) {
+        if (hostUser == null || !hostUser.getUserId().equals(lobby.getHostId())) {
             // Create a minimal host user with the ID and some basic info
             hostUser = new User();
             hostUser.setUserId(lobby.getHostId());
-            
+
             // Add a placeholder username to make it visible in UI
             hostUser.setUsername("Host (" + lobby.getHostId().substring(0, 5) + "...)");
-            
+
             // Add a default avatar URL
             hostUser.setAvatarUrl("https://api.dicebear.com/7.x/avataaars/svg?seed=host");
-            
+
             Log.d(TAG, "Created enhanced host user with ID: " + lobby.getHostId() + ", username: " + hostUser.getUsername());
         }
-        
+
         // Add host to player list
         lobby.getPlayers().add(hostUser);
         Log.d(TAG, "Added host to player list with ID: " + hostUser.getUserId());
     }
-    
+
     // Log final player list
-    Log.d(TAG, "Final player list for lobby " + lobby.getLobbyId() + " has " + 
+    Log.d(TAG, "Final player list for lobby " + lobby.getLobbyId() + " has " +
           lobby.getPlayers().size() + " players (including host)");
 }
 
@@ -705,46 +703,40 @@ private void ensureHostInPlayerList(Lobby lobby) {
                     // Apply settings directly to returned lobby object
                     newLobby.setNumRounds(numRounds);
                     newLobby.setRoundDurationSeconds(roundDurationSeconds);
-                    
+
                     // CRITICAL: Make sure the host is in the player list
                     Log.d(TAG, "Adding host to player list for newly created lobby: " + newLobby.getLobbyId());
                     ensureHostInPlayerList(newLobby);
-                    
-                    // Handle specific events
-                    if ("player_joined".equals("lobby_created") || "player_left".equals("lobby_created") || "lobby_created".equals("lobby_created")) {
-                        Log.i(TAG, " Player list changed event detected: " + "lobby_created" + " for lobby " + newLobby.getLobbyName());
-                        
-                        // Pre-fetch host user data to improve UI experience
-                        if (newLobby.getHostId() != null && userRepository != null) {
-                            // Move the user pre-fetching to the main thread to avoid IllegalStateException
-                            String hostId = newLobby.getHostId();
-                            Log.d(TAG, " Pre-fetching host data for ID: " + hostId);
-                            
-                            // This needs to happen on the main thread since getUserById uses setValue internally
-                            Handler mainHandler = new Handler(Looper.getMainLooper());
-                            mainHandler.post(() -> {
-                                // This call will cache the host data for future use
-                                userRepository.getUserById(hostId);
-                            });
-                        }
-                        
-                        // Update lobby in database to persist changes
-                        appExecutors.diskIO().execute(() -> {
-                            lobbyDao.insert(newLobby);
 
-                            // If this is the current lobby, update the UI
-                            Handler mainHandler = new Handler(Looper.getMainLooper());
-                            mainHandler.post(() -> {
-                                // Update available lobbies listing
-                                refreshLobbies();
-                                result.postValue(Resource.success(newLobby));
-                            });
+                    // Handle specific events
+                    Log.i(TAG, " Player list changed event detected: " + "lobby_created" + " for lobby " + newLobby.getLobbyName());
+
+                    // Pre-fetch host user data to improve UI experience
+                    if (newLobby.getHostId() != null) {
+                        // Move the user pre-fetching to the main thread to avoid IllegalStateException
+                        String hostId = newLobby.getHostId();
+                        Log.d(TAG, " Pre-fetching host data for ID: " + hostId);
+
+                        // This needs to happen on the main thread since getUserById uses setValue internally
+                        Handler mainHandler = new Handler(Looper.getMainLooper());
+                        mainHandler.post(() -> {
+                            // This call will cache the host data for future use
+                            userRepository.getUserById(hostId);
                         });
-                    } else {
-                        String errorMsg = response.body() != null && response.body().getMessage() != null ?
-                                         response.body().getMessage() : "Failed to create lobby";
-                        postError(result, errorMsg);
                     }
+
+                    // Update lobby in database to persist changes
+                    appExecutors.diskIO().execute(() -> {
+                        lobbyDao.insert(newLobby);
+
+                        // If this is the current lobby, update the UI
+                        Handler mainHandler = new Handler(Looper.getMainLooper());
+                        mainHandler.post(() -> {
+                            // Update available lobbies listing
+                            refreshLobbies();
+                            result.postValue(Resource.success(newLobby));
+                        });
+                    });
                 } else {
                     String errorMsg = response.body() != null && response.body().getMessage() != null ?
                                      response.body().getMessage() : "Failed to create lobby";
@@ -785,8 +777,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
 
             // Check if we're already in this lobby
             Lobby currentLobbyValue = currentLobby.getValue();
-            if (currentLobbyValue != null && currentLobbyValue.getLobbyId() != null &&
-                    currentLobbyValue.getLobbyId().equals(lobbyId)) {
+            if (currentLobbyValue != null && currentLobbyValue.getLobbyId().equals(lobbyId)) {
                 Log.i(TAG, "Already in this lobby (ID: " + lobbyId + "), returning current lobby data");
                 return new MutableLiveData<>(Resource.success(currentLobbyValue));
             }
@@ -821,7 +812,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
                                     ensureHostInPlayerList(joinedLobby);
                                     lobbyDao.insert(joinedLobby);
                                     lobbyCache.put(joinedLobby.getLobbyId(), new CachedLobby(joinedLobby));
-                                    
+
                                     // Use postValue instead of setValue for background thread safety
                                     currentLobby.postValue(joinedLobby);
 
@@ -829,14 +820,14 @@ private void ensureHostInPlayerList(Lobby lobby) {
                                     // The API join is sufficient, and WebSocket updates will work automatically
                                     // This prevents the serialization error with WebSocketMessage
                                     if (webSocketService.isConnected()) {
-                                        Log.d(TAG, "API join successful for lobby ID: " + joinedLobby.getLobbyId() + 
+                                        Log.d(TAG, "API join successful for lobby ID: " + joinedLobby.getLobbyId() +
                                               ", WebSocket connection is active for updates");
                                     } else {
                                         Log.d(TAG, "API join successful but WebSocket not connected. Real-time updates may be delayed.");
                                         // Try to connect WebSocket for future updates
                                         webSocketService.connect();
                                     }
-                                    
+
                                     // Post success on main thread
                                     new Handler(Looper.getMainLooper()).post(() -> {
                                         result.setValue(Resource.success(joinedLobby));
@@ -855,7 +846,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
                             resetJoinRequestFlag();
                         }
                     } else {
-                        String errorMsg = extractErrorMessage(response, "Failed to join lobby (API error)");
+                        String errorMsg = extractErrorMessage(response);
                         Log.e(TAG, "Failed to join lobby. Response Code: " + response.code() + ", Error: " + errorMsg + ", Lobby ID: " + lobbyId);
                         result.postValue(Resource.error(errorMsg, null));
                         resetJoinRequestFlag();
@@ -1024,30 +1015,18 @@ private void ensureHostInPlayerList(Lobby lobby) {
                     Game game = response.body().getData();
                     String gameId = game.getGameId();
                     result.postValue(Resource.success(gameId));
-                    
+
                     // IMPORTANT BUGFIX: The WebSocket message might not be received
                     // Create a synthetic game state message to ensure clients transition to game screen
                     Log.i(TAG, "🎲 Game started successfully via API, gameId: " + gameId);
                     Log.i(TAG, "🔍 Creating synthetic game_state message as WebSocket fallback");
-                    
+
                     // Wait a short time to see if WebSocket message arrives first
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                         if (externalCallback != null) {
                             try {
-                                Game gameObj =
-                                    new GameStateMessage.GamePayload().getGame();
-                                gameObj.setGameId(gameId);
-                                
-                                com.example.drawit_app.network.message.GameStateMessage.GamePayload payload = 
-                                    new com.example.drawit_app.network.message.GameStateMessage.GamePayload();
-                                payload.setEvent("started");
-                                payload.setGame(gameObj);
-                                
-                                com.example.drawit_app.network.message.GameStateMessage gameStateMessage = 
-                                    new com.example.drawit_app.network.message.GameStateMessage();
-                                gameStateMessage.setGamePayload(payload);
-                                gameStateMessage.setType("game_state");
-                                
+                                GameStateMessage gameStateMessage = getGameStateMessage(gameId);
+
                                 // Forward the synthetic message to the callback
                                 Log.i(TAG, "🚀 Dispatching synthetic game_state message to trigger navigation");
                                 externalCallback.onGameStateChanged(gameStateMessage);
@@ -1064,6 +1043,24 @@ private void ensureHostInPlayerList(Lobby lobby) {
                     Log.e(TAG, errorMsg);
                     result.postValue(Resource.error(errorMsg, null));
                 }
+            }
+
+            @NonNull
+            private GameStateMessage getGameStateMessage(String gameId) {
+                Game gameObj =
+                    new GameStateMessage.GamePayload().getGame();
+                gameObj.setGameId(gameId);
+
+                GameStateMessage.GamePayload payload =
+                    new GameStateMessage.GamePayload();
+                payload.setEvent("started");
+                payload.setGame(gameObj);
+
+                GameStateMessage gameStateMessage =
+                    new GameStateMessage();
+                gameStateMessage.setGamePayload(payload);
+                gameStateMessage.setType("game_state");
+                return gameStateMessage;
             }
 
             @Override
@@ -1384,25 +1381,13 @@ private void ensureHostInPlayerList(Lobby lobby) {
         }
     }
 
-    private String extractErrorMessage(retrofit2.Response<?> response, String defaultMessage) {
-        String errorMsg = defaultMessage;
+    private String extractErrorMessage(Response<?> response) {
+        String errorMsg = "Failed to join lobby (API error)";
         if (response.errorBody() != null) {
             try {
                 String errorBodyString = response.errorBody().string();
                 if (!errorBodyString.isEmpty()) {
-                    // Attempt to parse as ApiResponse to get a structured message
-                    // This assumes your error responses might also follow the ApiResponse structure
-                    // com.google.gson.Gson gson = new com.google.gson.Gson();
-                    // try {
-                    //     ApiResponse<?> apiErrorResponse = gson.fromJson(errorBodyString, ApiResponse.class);
-                    //     if (apiErrorResponse != null && apiErrorResponse.getMessage() != null) {
-                    //         return apiErrorResponse.getMessage();
-                    //     }
-                    // } catch (com.google.gson.JsonSyntaxException e) {
-                    //     // Not a JSON ApiResponse, or not the expected structure
-                    //     Log.w(TAG, "Error body is not a standard ApiResponse: " + e.getMessage());
-                    // }
-                    return errorBodyString; // Fallback to raw error body string
+                    return errorBodyString;
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Error reading error body: " + e.getMessage());

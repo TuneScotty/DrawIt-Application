@@ -293,9 +293,6 @@ public class GameRepository extends BaseRepository {
      * @param message The message text
      */
     public void sendChatMessage(String gameId, String message) {
-        // In a real implementation, this would be sent via WebSocket
-        // For now, we'll just add it to the local list
-        
         // Get current user
         User currentUser = userRepository.getCurrentUser().getValue();
         if (currentUser == null) {
@@ -323,11 +320,8 @@ public class GameRepository extends BaseRepository {
      * @param pathsJson JSON representation of the paths
      */
     public void updateDrawingPath(String gameId, String pathsJson) {
-        // Update local drawing paths
+
         drawingPaths.postValue(pathsJson);
-        
-        // In a real implementation, this would be sent to the server
-        // webSocketService.updateDrawingPath(gameId, pathsJson);
     }
     
     /**

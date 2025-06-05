@@ -55,10 +55,10 @@ public class LobbySettingsManager {
      * Retrieve and apply stored settings to a lobby object
      * Returns true if settings were applied
      */
-    public boolean applySettings(Lobby lobby) {
-        if (lobby == null || lobby.getLobbyId() == null || lobby.getLobbyId().isEmpty() || context == null) {
+    public void applySettings(Lobby lobby) {
+        if (lobby == null || lobby.getLobbyId().isEmpty() || context == null) {
             Log.w(TAG, "Cannot apply settings - invalid lobby or context");
-            return false;
+            return;
         }
         
         try {
@@ -96,7 +96,6 @@ public class LobbySettingsManager {
                 if (changed) {
                     Log.d(TAG, "✅ Applied stored settings to lobby " + lobbyId + 
                          ": rounds=" + numRounds + ", duration=" + roundDuration);
-                    return true;
                 } else {
                     Log.d(TAG, "No changes made when applying settings to lobby " + lobbyId);
                 }
@@ -106,8 +105,7 @@ public class LobbySettingsManager {
         } catch (Exception e) {
             Log.e(TAG, "Error applying stored settings", e);
         }
-        
-        return false;
+
     }
     
     /**

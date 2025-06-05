@@ -47,10 +47,7 @@ public class DrawingViewModel extends ViewModel {
     private final MutableLiveData<Drawing> drawingDetails = new MutableLiveData<>();
     private final MutableLiveData<Boolean> isLoading = new MutableLiveData<>();
     private final MutableLiveData<String> _error = new MutableLiveData<>();
-    
-    // WebSocket callback for game updates
-    private WebSocketService.GameUpdateCallback gameUpdateCallback;
-    
+
     /**
      * Get error messages
      */
@@ -165,7 +162,7 @@ public class DrawingViewModel extends ViewModel {
      * Set the WebSocket callback for game updates
      */
     public void setGameUpdateCallback(WebSocketService.GameUpdateCallback callback) {
-        this.gameUpdateCallback = callback;
+        // WebSocket callback for game updates
         gameRepository.setGameUpdateCallback(callback);
     }
     

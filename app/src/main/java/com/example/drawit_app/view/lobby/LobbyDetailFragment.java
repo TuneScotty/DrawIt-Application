@@ -6,9 +6,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import androidx.appcompat.app.AppCompatActivity;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
@@ -91,41 +89,28 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             navController.navigateUp();
             return;
         }
-        
-        // Show loading indicator
+
         binding.progressBar.setVisibility(View.VISIBLE);
-        
-        // Set text colors to ensure visibility
+
         setTextColors();
-        
         setupRecyclerView();
         setupListeners();
         observeViewModel();
-        
-        // Set WebSocket callback
+
         lobbyViewModel.setLobbyUpdateCallback(this);
-        
-        // Join lobby when fragment is created
         lobbyViewModel.joinLobby(lobbyId);
-        
-        // Joining lobby
     }
     
     private void setupRecyclerView() {
-        // Create adapter with initial empty player list
         ArrayList<User> initialPlayers = new ArrayList<>();
-        
-        // Add current user as a placeholder
+
         User currentUser = lobbyViewModel.getCurrentUser();
         if (currentUser != null) {
             initialPlayers.add(currentUser);
         }
-        
-        // Use enhanced adapter with UserRepository to fetch proper usernames
+
         playerAdapter = new PlayerAdapter(initialPlayers, userRepository, getViewLifecycleOwner());
-        
-        // Set a distinctive background for the RecyclerView to make it visible
-        binding.rvPlayers.setBackgroundColor(0x33FFFFFF); // Semi-transparent white with more opacity
+        binding.rvPlayers.setBackgroundColor(0x33FFFFFF);
         binding.rvPlayers.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.rvPlayers.setAdapter(playerAdapter);
     }
@@ -139,12 +124,10 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 Toast.makeText(requireContext(), R.string.error_not_host, Toast.LENGTH_SHORT).show();
             }
         });
-        
-        // Add back button listener to handle proper lobby leaving
+
         requireActivity().getOnBackPressedDispatcher().addCallback(getViewLifecycleOwner(), new androidx.activity.OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                // Call the proper cleanup method before navigating back
                 leaveLobbyAndCleanup();
             }
         });
@@ -155,10 +138,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
      * This method ensures the player is properly removed from the lobby
      * and if they were the last player, the lobby is deleted from the database
      */
-    /**
-     * Handles proper lobby leaving, server notification, and auto-deletion if empty
-     * Thread-safe implementation with proper observer pattern usage
-     */
+
     private void leaveLobbyAndCleanup() {
         // Get current lobby data to check player count
         Lobby currentLobby = lobbyViewModel.getCurrentLobby().getValue();
@@ -172,8 +152,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 // Subtract 1 for the leaving player (current user)
                 if (currentUser != null) {
                     for (User player : currentLobby.getPlayers()) {
-                        if (player.getUserId() != null && currentUser.getUserId() != null && 
-                            player.getUserId().equals(currentUser.getUserId())) {
+                        if (player.getUserId().equals(currentUser.getUserId())) {
                             playerCount--;
                             break;
                         }
@@ -207,10 +186,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             navController.navigateUp();
         }
     }
-    
-    /**
-     * Sets text colors for all text views to ensure visibility against dark background
-     */
+
     /**
      * Sets text colors for all text views to ensure visibility against dark background
      * Consolidated method to avoid duplication
@@ -300,9 +276,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 // Get host and current user references for UI updates
                 User host = lobby.getHost();
                 User currentUser = lobbyViewModel.getCurrentUser();
-                
-                // Simplified player counting using just the players list
-                // The server now properly includes all players in the players list
+
                 int playerCount = 0;
                 if (lobby.getPlayers() != null) {
                     playerCount = lobby.getPlayers().size();
@@ -316,34 +290,26 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 
                 // Set the player count display
                 binding.tvPlayersCount.setText(playerCount + "/" + maxPlayers + " Players");
-                
-                // Get lobby rounds and duration with robust fallback handling
-                
-                // ==== ROUNDS HANDLING ====
-                // Use explicit getter methods for consistency
+
                 int rounds = lobby.getNumRounds();
                 if (rounds <= 0) {
                     // Double-check with convenience method
                     rounds = lobby.getRounds();
                 }
-                
-                // Apply fallback only if both methods return invalid values
+
                 if (rounds <= 0) {
                     rounds = 3; // Default rounds
                 }
                 
                 // Use clear formatting for display
                 binding.tvRounds.setText(String.valueOf(rounds));
-                
-                // ==== DURATION HANDLING ====
-                // Use explicit getter methods for consistency
+
                 int duration = lobby.getRoundDurationSeconds();
                 if (duration <= 0) {
                     // Double-check with convenience method
                     duration = lobby.getRoundDuration();
                 }
-                
-                // Apply fallback only if both methods return invalid values
+
                 if (duration <= 0) {
                     duration = 60; // Default duration
                 }
@@ -356,38 +322,29 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 
                 // First check if current user is the host
                 boolean currentUserIsHost;
-                if (currentUser != null && host != null && 
-                    currentUser.getUserId() != null && host.getUserId() != null && 
-                    currentUser.getUserId().equals(host.getUserId())) {
+                if (currentUser != null && host != null && currentUser.getUserId().equals(host.getUserId())) {
                     currentUserIsHost = true;
                     isHost = true;
                 } else {
                     currentUserIsHost = false;
                 }
 
-                // Simply use the players list directly from the server
-                // Since we can now get complete user data via the /users/{userId} endpoint
-                displayPlayers.clear();
-                
                 if (lobby.getPlayers() != null) {
-                    // Log player information for debugging
                     Log.d(TAG, "Processing lobby with " + lobby.getPlayers().size() + " players");
                     for (User player : lobby.getPlayers()) {
                         Log.d(TAG, "Player in lobby: " + 
                             (player.getUsername() != null ? player.getUsername() : "null") + 
-                            ", ID: " + (player.getUserId() != null ? player.getUserId() : "null"));
+                            ", ID: " + player.getUserId());
                     }
-                    
-                    // Create a new list to avoid concurrent modification
+
                     java.util.List<User> players = new java.util.ArrayList<>(lobby.getPlayers());
                     
                     // Move host to the top of the list if present
-                    if (host != null && host.getUserId() != null) {
+                    if (host != null) {
                         // First remove host from the regular players list if present
                         for (int i = 0; i < players.size(); i++) {
                             User player = players.get(i);
-                            if (player != null && player.getUserId() != null && 
-                                host.getUserId().equals(player.getUserId())) {
+                            if (player != null && host.getUserId().equals(player.getUserId())) {
                                 players.remove(i);
                                 break;
                             }
@@ -411,7 +368,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 playerAdapter.updatePlayers(new java.util.ArrayList<>(displayPlayers));
                 
                 // Update host display in UI using the user ID directly
-                if (host != null && host.getUserId() != null && !host.getUserId().isEmpty()) {
+                if (host != null && !host.getUserId().isEmpty()) {
                     // Use the userId to get the host data directly from the API
                     android.util.Log.d(TAG, "Fetching host info using userId: " + host.getUserId());
                     
@@ -436,7 +393,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                         } else if (resource.getStatus() == BaseRepository.Resource.Status.ERROR) {
                             android.util.Log.e(TAG, "Error fetching host data: " + resource.getMessage());
                             // If error, show a default name
-                            String fallbackName = currentUserIsHost && currentUser != null ? 
+                            String fallbackName = currentUserIsHost ?
                                 currentUser.getUsername() : "Unknown Host";
                                 
                             if (currentUserIsHost) {
@@ -450,7 +407,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 } else {
                     android.util.Log.e(TAG, "No valid host ID found");
                     String fallbackName = "Unknown Host";
-                    if (currentUserIsHost && currentUser != null && currentUser.getUsername() != null) {
+                    if (currentUserIsHost && currentUser.getUsername() != null) {
                         fallbackName = currentUser.getUsername();
                     }
                     
@@ -547,23 +504,23 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
     @Override
     public void onLobbyStateChanged(LobbyStateMessage message) {
         // This is called from WebSocketService when lobby updates are received
-        Log.d("LobbyDetailFragment", "⚡ WebSocket update received: onLobbyStateChanged with message: " + 
+        Log.d("LobbyDetailFragment", "WebSocket update received: onLobbyStateChanged with message: " + 
              (message != null ? "valid" : "null"));
              
         if (message != null && message.getLobbyPayload() != null) {
             // Process message on main thread for UI updates
             if (getActivity() == null || !isAdded()) {
-                Log.w("LobbyDetailFragment", "⚡ Fragment detached, cannot process WebSocket update");
+                Log.w("LobbyDetailFragment", "Fragment detached, cannot process WebSocket update");
                 return;
             }
             
             // Get event type for appropriate handling
             String eventType = message.getLobbyPayload().getEvent();
-            Log.d("LobbyDetailFragment", "⚡ WebSocket event type: " + (eventType != null ? eventType : "null"));
+            Log.d("LobbyDetailFragment", "WebSocket event type: " + (eventType != null ? eventType : "null"));
             
             // First, update the repository state to ensure data consistency
             if (lobbyViewModel != null) {
-                Log.d("LobbyDetailFragment", "⚡ Forwarding update to repository first");
+                Log.d("LobbyDetailFragment", "Forwarding update to repository first");
                 lobbyViewModel.processLobbyUpdate(message.getLobbyPayload().toString());
             }
             
@@ -574,7 +531,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 
                 // Skip processing if no lobby payload
                 if (message.getLobbyPayload().getLobby() == null) {
-                    Log.w("LobbyDetailFragment", "⚡ Received WebSocket update with null lobby payload");
+                    Log.w("LobbyDetailFragment", "Received WebSocket update with null lobby payload");
                     return;
                 }
                 
@@ -584,44 +541,44 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 
                 // Verify lobby ID match
                 if (currentLobbyId == null || !currentLobbyId.equals(receivedLobbyId)) {
-                    Log.d("LobbyDetailFragment", "⚡ Ignoring update for different lobby: current=" + 
+                    Log.d("LobbyDetailFragment", "Ignoring update for different lobby: current=" + 
                          currentLobbyId + ", received=" + receivedLobbyId);
                     return;
                 }
                 
-                Log.d("LobbyDetailFragment", "⚡ Processing WebSocket update for lobby: " + receivedLobbyId);
+                Log.d("LobbyDetailFragment", "Processing WebSocket update for lobby: " + receivedLobbyId);
                 
                 // Get players from the message
                 List<User> updatedPlayers = message.getLobbyPayload().getPlayers();
                 if (updatedPlayers == null || updatedPlayers.isEmpty()) {
-                    Log.d("LobbyDetailFragment", "⚡ No players in payload, checking lobby object");
+                    Log.d("LobbyDetailFragment", "No players in payload, checking lobby object");
                     
                     // Try to get players directly from the lobby object as fallback
                     Lobby updatedLobby = message.getLobbyPayload().getLobby();
                     if (updatedLobby != null && updatedLobby.getPlayers() != null) {
                         updatedPlayers = updatedLobby.getPlayers();
-                        Log.d("LobbyDetailFragment", "⚡ Using players from lobby object: " + updatedPlayers.size());
+                        Log.d("LobbyDetailFragment", "Using players from lobby object: " + updatedPlayers.size());
                     } else {
-                        Log.w("LobbyDetailFragment", "⚡ No players available in WebSocket update");
+                        Log.w("LobbyDetailFragment", "No players available in WebSocket update");
                     }
                 } else {
-                    Log.d("LobbyDetailFragment", "⚡ Using players from payload: " + updatedPlayers.size());
+                    Log.d("LobbyDetailFragment", "Using players from payload: " + updatedPlayers.size());
                 }
                 
                 // Debug log all players
                 if (updatedPlayers != null) {
                     for (User player : updatedPlayers) {
-                        Log.d("LobbyDetailFragment", "⚡ Player in update: " + player.getUserId() + " - " + player.getUsername());
+                        Log.d("LobbyDetailFragment", "Player in update: " + player.getUserId() + " - " + player.getUsername());
                     }
                 }
                 
                 // Always update UI directly from WebSocket data, regardless of ViewModel updates
                 if (updatedPlayers != null && !updatedPlayers.isEmpty()) {
-                    Log.d("LobbyDetailFragment", "⚡ Updating UI with " + updatedPlayers.size() + " players");
+                    Log.d("LobbyDetailFragment", "Updating UI with " + updatedPlayers.size() + " players");
                     
                     // Get host ID for proper display
                     String hostId = message.getLobbyPayload().getLobby().getHostId();
-                    Log.d("LobbyDetailFragment", "⚡ Host ID: " + hostId);
+                    Log.d("LobbyDetailFragment", "Host ID: " + hostId);
                     
                     // CRITICAL: Update player adapter with new player list
                     updatePlayerAdapter(updatedPlayers, hostId);
@@ -638,34 +595,30 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 }
             });
         } else {
-            Log.w("LobbyDetailFragment", "⚡ Received null message or null payload in onLobbyStateChanged");
+            Log.w("LobbyDetailFragment", "Received null message or null payload in onLobbyStateChanged");
         }
     }
-    
-    /**
-     * Update player adapter directly with new player data
-     * This is a helper method to ensure consistent player list updates
-     */
+
     /**
      * Update player adapter directly with new player data
      * This is a helper method to ensure consistent player list updates
      */
     private void updatePlayerAdapter(List<User> players, String hostId) {
         if (players == null) {
-            Log.w("LobbyDetailFragment", "⚡ Cannot update adapter with null players list");
+            Log.w("LobbyDetailFragment", "Cannot update adapter with null players list");
             return;
         }
         
-        Log.d("LobbyDetailFragment", "⚡ Updating player adapter with " + players.size() + " players");
+        Log.d("LobbyDetailFragment", "Updating player adapter with " + players.size() + " players");
         
         // Log every player we received
         for (int i = 0; i < players.size(); i++) {
             User player = players.get(i);
             if (player != null) {
-                Log.d("LobbyDetailFragment", "⚡ Player[" + i + "] ID=" + player.getUserId() + 
+                Log.d("LobbyDetailFragment", "Player[" + i + "] ID=" + player.getUserId() + 
                      ", username=" + player.getUsername());
             } else {
-                Log.d("LobbyDetailFragment", "⚡ Player[" + i + "] is NULL");
+                Log.d("LobbyDetailFragment", "Player[" + i + "] is NULL");
             }
         }
         
@@ -675,19 +628,19 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
         
         // Check if hostId is valid
         if (hostId == null || hostId.isEmpty()) {
-            Log.w("LobbyDetailFragment", "⚡ HostId is null or empty!");
+            Log.w("LobbyDetailFragment", "HostId is null or empty!");
         } else {
-            Log.d("LobbyDetailFragment", "⚡ Looking for host with ID: " + hostId);
+            Log.d("LobbyDetailFragment", "Looking for host with ID: " + hostId);
         }
         
         // Find host in player list
         if (hostId != null) {
             for (User player : players) {
-                if (player != null && player.getUserId() != null) {
-                    Log.d("LobbyDetailFragment", "⚡ Comparing player ID " + player.getUserId() + " with host ID " + hostId);
+                if (player != null) {
+                    Log.d("LobbyDetailFragment", "Comparing player ID " + player.getUserId() + " with host ID " + hostId);
                     if (player.getUserId().equals(hostId)) {
                         hostUser = player;
-                        Log.d("LobbyDetailFragment", "⚡ Found host in player list: " + 
+                        Log.d("LobbyDetailFragment", "Found host in player list: " + 
                             (player.getUsername() != null ? player.getUsername() : "null"));
                         break;
                     }
@@ -698,62 +651,55 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
         // Add host at the top if found
         if (hostUser != null) {
             displayPlayers.add(hostUser);
-            Log.d("LobbyDetailFragment", "⚡ Added host to display list: " + 
+            Log.d("LobbyDetailFragment", "Added host to display list: " + 
                 (hostUser.getUsername() != null ? hostUser.getUsername() : "null"));
             
             // Add all non-host players
             for (User player : players) {
-                if (player != null && player.getUserId() != null && 
-                    !player.getUserId().equals(hostId)) {
+                if (player != null && !player.getUserId().equals(hostId)) {
                     displayPlayers.add(player);
-                    Log.d("LobbyDetailFragment", "⚡ Added regular player to display list: " + 
+                    Log.d("LobbyDetailFragment", "Added regular player to display list: " + 
                         (player.getUsername() != null ? player.getUsername() : "null"));
                 }
             }
         } else {
             // No host found, just add all players
-            Log.w("LobbyDetailFragment", "⚡ Host not found in player list, adding all players");
+            Log.w("LobbyDetailFragment", "Host not found in player list, adding all players");
             displayPlayers.addAll(players);
         }
         
-        Log.d("LobbyDetailFragment", "⚡ Final display list contains " + displayPlayers.size() + " players");
+        Log.d("LobbyDetailFragment", "Final display list contains " + displayPlayers.size() + " players");
         
         // Check if adapter is still valid before updating
         if (playerAdapter != null) {
             // Update the adapter with the new list
             playerAdapter.updatePlayers(displayPlayers);
-            Log.d("LobbyDetailFragment", "⚡ playerAdapter.updatePlayers called with " + displayPlayers.size() + " players");
+            Log.d("LobbyDetailFragment", "playerAdapter.updatePlayers called with " + displayPlayers.size() + " players");
         } else {
-            Log.w("LobbyDetailFragment", "⚡ playerAdapter is null, skipping update");
+            Log.w("LobbyDetailFragment", "playerAdapter is null, skipping update");
             return;
         }
-        
-        // Check if binding is still valid before accessing views
-        if (binding != null && binding.rvPlayers != null) {
-            // Force a layout refresh
+
+        if (binding != null) {
             binding.rvPlayers.post(() -> {
-                // Double-check again in case binding becomes null between checks
-                if (binding != null && binding.rvPlayers != null) {
-                    Log.d("LobbyDetailFragment", "⚡ Forcing layout refresh for RecyclerView");
+                if (binding != null) {
+                    Log.d("LobbyDetailFragment", "Forcing layout refresh for RecyclerView");
                     binding.rvPlayers.requestLayout();
                 }
             });
         } else {
-            Log.w("LobbyDetailFragment", "⚡ binding or binding.rvPlayers is null, skipping layout refresh");
+            Log.w("LobbyDetailFragment", "binding or binding.rvPlayers is null, skipping layout refresh");
         }
-        
-        // If we have a host user, update the adapter and UI accordingly
+
         if (hostUser != null && binding != null) {
             if (hostUser.getUsername() != null) {
                 if (playerAdapter != null) {
                     playerAdapter.setHostUsername(hostUser.getUsername());
                 }
-                if (binding.tvHostName != null) {
-                    binding.tvHostName.setText(hostUser.getUsername());
-                    Log.d("LobbyDetailFragment", "⚡ Updated host username in UI: " + hostUser.getUsername());
-                }
+                binding.tvHostName.setText(hostUser.getUsername());
+                Log.d("LobbyDetailFragment", "Updated host username in UI: " + hostUser.getUsername());
             } else {
-                Log.d("LobbyDetailFragment", "⚡ Host username is null, fetching asynchronously");
+                Log.d("LobbyDetailFragment", "Host username is null, fetching asynchronously");
                 // Try to fetch host username asynchronously
                 userRepository.getUserById(hostId).observe(getViewLifecycleOwner(), resource -> {
                     if (resource.isSuccess() && resource.getData() != null && 
@@ -761,14 +707,14 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                         String hostUsername = resource.getData().getUsername();
                         playerAdapter.setHostUsername(hostUsername);
                         binding.tvHostName.setText(hostUsername);
-                        Log.d("LobbyDetailFragment", "⚡ Async fetched host username: " + hostUsername);
+                        Log.d("LobbyDetailFragment", "Async fetched host username: " + hostUsername);
                     } else {
-                        Log.w("LobbyDetailFragment", "⚡ Failed to fetch host username");
+                        Log.w("LobbyDetailFragment", "Failed to fetch host username");
                     }
                 });
             }
         } else {
-            Log.w("LobbyDetailFragment", "⚡ No host user to update in UI");
+            Log.w("LobbyDetailFragment", "No host user to update in UI");
         }
         
         // Update the player count UI
@@ -776,7 +722,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             (lobbyViewModel.getCurrentLobby().getValue() != null ? 
             lobbyViewModel.getCurrentLobby().getValue().getMaxPlayers() : "?") + " Players";
         binding.tvPlayersCount.setText(playerCountText);
-        Log.d("LobbyDetailFragment", "⚡ Updated player count: " + playerCountText);
+        Log.d("LobbyDetailFragment", "Updated player count: " + playerCountText);
     }
 
     /**
@@ -867,12 +813,9 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
      */
     @Override
     public void onError(String errorMessage) {
-        // Handle WebSocket error on the main thread for thread safety
         if (errorMessage != null && !errorMessage.isEmpty()) {
-            // Check if fragment is still attached to avoid IllegalStateException
             if (isAdded() && getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
-                    // Double-check still attached before showing toast
                     if (isAdded()) {
                         Log.e("LobbyDetailFragment", "WebSocket error: " + errorMessage);
                         Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_SHORT).show();
@@ -894,14 +837,14 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
     @Override
     public void onGameStateChanged(GameStateMessage message) {
         // Super detailed logging to trace game state flow
-        Log.w("LobbyDetailFragment", "🔍 onGameStateChanged CALLED with message: " + (message != null ? "non-null" : "NULL"));
+        Log.w("LobbyDetailFragment", "onGameStateChanged CALLED with message: " + (message != null ? "non-null" : "NULL"));
         
         if (message != null) {
-            Log.d("LobbyDetailFragment", "🔍 GamePayload: " + (message.getGamePayload() != null ? "non-null" : "NULL"));
+            Log.d("LobbyDetailFragment", "GamePayload: " + (message.getGamePayload() != null ? "non-null" : "NULL"));
             
             if (message.getGamePayload() != null) {
-                Log.d("LobbyDetailFragment", "🔍 Game: " + (message.getGamePayload().getGame() != null ? "non-null" : "NULL"));
-                Log.d("LobbyDetailFragment", "🔍 Event: " + message.getGamePayload().getEvent());
+                Log.d("LobbyDetailFragment", "Game: " + (message.getGamePayload().getGame() != null ? "non-null" : "NULL"));
+                Log.d("LobbyDetailFragment", "Event: " + message.getGamePayload().getEvent());
             }
         }
         
@@ -914,40 +857,34 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             
             // Handle different game events
             if (event != null && event.equals("started")) {
-                Log.i("LobbyDetailFragment", "🎮 GAME STARTED event received via WebSocket, gameId: " + gameId);
+                Log.i("LobbyDetailFragment", "GAME STARTED event received via WebSocket, gameId: " + gameId);
                 
                 // Check if fragment is still attached
                 boolean isFragmentAdded = isAdded();
                 boolean hasActivity = getActivity() != null;
-                Log.d("LobbyDetailFragment", "🔍 Fragment state - isAdded: " + isFragmentAdded + 
+                Log.d("LobbyDetailFragment", "Fragment state - isAdded: " + isFragmentAdded + 
                       ", hasActivity: " + hasActivity + ", navController: " + (navController != null ? "non-null" : "NULL"));
                 
                 if (isAdded() && getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
                         // Navigate to game screen
-                        if (isAdded() && gameId != null && !gameId.isEmpty()) {
-                            Log.i("LobbyDetailFragment", "🚀 NAVIGATING to game screen with gameId: " + gameId);
+                        if (isAdded() && !gameId.isEmpty()) {
+                            Log.i("LobbyDetailFragment", "NAVIGATING to game screen with gameId: " + gameId);
                             try {
                                 Bundle args = new Bundle();
                                 args.putString("gameId", gameId);
                                 navController.navigate(R.id.action_lobbyDetailFragment_to_gameFragment, args);
-                                Log.i("LobbyDetailFragment", "✅ Navigation completed successfully");
+                                Log.i("LobbyDetailFragment", "Navigation completed successfully");
                             } catch (Exception e) {
-                                Log.e("LobbyDetailFragment", "❌ Navigation FAILED: " + e.getMessage(), e);
+                                Log.e("LobbyDetailFragment", "Navigation FAILED: " + e.getMessage(), e);
                             }
                         } else {
-                            Log.e("LobbyDetailFragment", "❌ Cannot navigate - isAdded: " + isAdded() + 
-                                  ", gameId valid: " + (gameId != null && !gameId.isEmpty()));
+                            Log.e("LobbyDetailFragment", "Cannot navigate - isAdded: " + isAdded() +
+                                    ", gameId valid: " + !gameId.isEmpty());
                         }
                     });
-                } else {
-                    Log.e("LobbyDetailFragment", "❌ Cannot navigate - fragment detached or activity null");
                 }
-            } else {
-                Log.i("LobbyDetailFragment", "ℹ️ Game event received but not 'started': " + event);
             }
-        } else {
-            Log.w("LobbyDetailFragment", "⚠️ Received null or incomplete game state message");
         }
     }
     
@@ -963,7 +900,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
         boolean isGameStarted = event != null && event.type == LobbyViewModel.LobbyEventType.GAME_STARTED;
         
         // Add log to see if fragment is being destroyed during game navigation
-        Log.d("LobbyDetailFragment", "🔄 onDestroyView called, isGameStarted: " + isGameStarted);
+        Log.d("LobbyDetailFragment", "onDestroyView called, isGameStarted: " + isGameStarted);
         
         if (!isGameStarted) {
             leaveLobbyAndCleanup();

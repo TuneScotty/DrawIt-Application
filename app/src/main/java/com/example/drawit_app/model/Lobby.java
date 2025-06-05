@@ -45,18 +45,15 @@ public class Lobby {
     // Track if settings were explicitly set to determine if we should use defaults
     private transient boolean numRoundsExplicitlySet = false;
     private transient boolean roundDurationExplicitlySet = false;
-    
-    // Cache for client-side settings that might not be returned by server
     private transient boolean hasLocalSettingsOverride = false;
-    
-    // Players in the lobby, populated from JSON
-    @Ignore // Tell Room to ignore this field for database operations
-    @Json(name = "players") // For Moshi/Gson to deserialize from JSON
+
+    @Ignore
+    @Json(name = "players")
     private List<User> players;
     
     // Host user details from server
-    @Ignore // Tell Room to ignore this field for database operations
-    @Json(name = "hostUser") // For Moshi/Gson to deserialize from JSON
+    @Ignore
+    @Json(name = "hostUser")
     private User hostUser;
     
     public Lobby() {
@@ -128,7 +125,7 @@ public class Lobby {
 
     public User getHost() {
         // First priority: use the hostUser object if available
-        if (hostUser != null && hostUser.getUserId() != null) {
+        if (hostUser != null) {
             return hostUser;
         }
         

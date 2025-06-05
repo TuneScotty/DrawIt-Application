@@ -90,6 +90,7 @@ Thumbs.db
 .project
 .settings/
 .idea/sonarlint/
+.vscodeCounter/
 
 # Fastlane
 fastlane/report.xml
@@ -109,6 +110,3 @@ firebase-debug.log
 # Temp files
 tmp/
 temp/
-
-# Codeium
-windsurfrules

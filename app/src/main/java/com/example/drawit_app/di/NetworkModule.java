@@ -2,8 +2,7 @@ package com.example.drawit_app.di;
 
 import com.example.drawit_app.network.ApiService;
 import com.example.drawit_app.network.WebSocketService;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.squareup.moshi.Moshi;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -18,7 +17,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.logging.HttpLoggingInterceptor;
 import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.converter.moshi.MoshiConverterFactory;
 
 @Module
 @InstallIn(SingletonComponent.class)
@@ -42,20 +41,79 @@ public class NetworkModule {
         
         return new OkHttpClient.Builder()
                 .addInterceptor(loggingInterceptor)
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                .connectTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
                 .build();
     }
 
     @Provides
     @Singleton
-    public static Retrofit provideRetrofit(OkHttpClient okHttpClient) {
-        // Configure Gson for serialization
-        Gson gson = new GsonBuilder()
-                .setLenient()
-                .setPrettyPrinting() // Makes JSON more readable in logs
-                .create();
+    public static Moshi provideMoshi() {
+        // Configure Moshi for serialization to properly handle @Json annotations, Date and Void type
+        Moshi moshi = new Moshi.Builder()
+                .add(Void.class, new com.squareup.moshi.JsonAdapter<Void>() {
+                    @Override
+                    public Void fromJson(com.squareup.moshi.JsonReader reader) throws java.io.IOException {
+                        reader.skipValue();
+                        return null;
+                    }
+
+                    @Override
+                    public void toJson(com.squareup.moshi.JsonWriter writer, Void value) throws java.io.IOException {
+                        writer.nullValue();
+                    }
+                })
+                // Add custom adapter for java.util.Date
+                .add(java.util.Date.class, new com.squareup.moshi.JsonAdapter<java.util.Date>() {
+                    @Override
+                    public java.util.Date fromJson(com.squareup.moshi.JsonReader reader) throws java.io.IOException {
+                        if (reader.peek() == com.squareup.moshi.JsonReader.Token.NULL) {
+                            reader.nextNull();
+                            return null;
+                        }
+                        String dateString = reader.nextString();
+                        try {
+                            // Try to parse as a timestamp first
+                            long timestamp = Long.parseLong(dateString);
+                            return new java.util.Date(timestamp);
+                        } catch (NumberFormatException e) {
+                            // If it's not a timestamp, try to parse as ISO 8601 date
+                            try {
+                                return new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").parse(dateString);
+                            } catch (java.text.ParseException pe) {
+                                try {
+                                    // Try another common format
+                                    return new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").parse(dateString);
+                                } catch (java.text.ParseException pe2) {
+                                    android.util.Log.e("NetworkModule", "Failed to parse date: " + dateString, pe2);
+                                    return null;
+                                }
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void toJson(com.squareup.moshi.JsonWriter writer, java.util.Date value) throws java.io.IOException {
+                        if (value == null) {
+                            writer.nullValue();
+                        } else {
+                            // Use ISO 8601 format for consistency
+                            String dateFormatted = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(value);
+                            writer.value(dateFormatted);
+                        }
+                    }
+                })
+                .build();
+                
+        android.util.Log.d("NetworkModule", "DEBUG: Using Moshi for JSON parsing to handle @Json annotations and Date");
+        
+        return moshi;
+    }
+
+    @Provides
+    @Singleton
+    public static Retrofit provideRetrofit(OkHttpClient okHttpClient, Moshi moshi) {
         
         // Add an interceptor to ensure all requests have the correct Content-Type header
         OkHttpClient clientWithHeaders = okHttpClient.newBuilder()
@@ -78,7 +136,7 @@ public class NetworkModule {
         return new Retrofit.Builder()
                 .baseUrl(BASE_URL)
                 .client(clientWithHeaders)
-                .addConverterFactory(GsonConverterFactory.create(gson))
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .callbackExecutor(Executors.newFixedThreadPool(THREADS))
                 .build();
     }

@@ -3,15 +3,21 @@ package com.example.drawit_app.view.adapter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.drawit_app.R;
 import com.example.drawit_app.databinding.ItemLobbyBinding;
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
 
 import java.util.List;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.Observer;
+
+import com.example.drawit_app.repository.BaseRepository.Resource;
+import com.example.drawit_app.repository.UserRepository;
 
 /**
  * Adapter for displaying a list of game lobbies
@@ -20,10 +26,20 @@ public class LobbyAdapter extends RecyclerView.Adapter<LobbyAdapter.LobbyViewHol
 
     private List<Lobby> lobbies;
     private final LobbyClickListener listener;
+    private UserRepository userRepository;
+    private LifecycleOwner lifecycleOwner;
 
     public LobbyAdapter(List<Lobby> lobbies, LobbyClickListener listener) {
         this.lobbies = lobbies;
         this.listener = listener;
+    }
+    
+    public LobbyAdapter(List<Lobby> lobbies, LobbyClickListener listener, 
+                       UserRepository userRepository, LifecycleOwner lifecycleOwner) {
+        this.lobbies = lobbies;
+        this.listener = listener;
+        this.userRepository = userRepository;
+        this.lifecycleOwner = lifecycleOwner;
     }
 
     @NonNull
@@ -73,90 +89,150 @@ public class LobbyAdapter extends RecyclerView.Adapter<LobbyAdapter.LobbyViewHol
             }
             
             try {
-                // Set lobby name with null check
-                String lobbyName = lobby.getName();
+                // Get proper lobby name - try all possible methods
+                String lobbyName = lobby.getLobbyName();
                 if (lobbyName == null || lobbyName.isEmpty()) {
-                    lobbyName = "Unnamed Lobby";
+                    lobbyName = lobby.getLobbyName();
+                }
+                
+                // Only use fallback if we absolutely have no name from any source
+                if (lobbyName == null || lobbyName.isEmpty()) {
+                    lobbyName = "Lobby " + lobby.getLobbyId();
                 }
                 binding.tvLobbyName.setText(lobbyName);
                 
                 // Get actual host data using the Lobby's getHost method
                 User host = lobby.getHost();
                 
-                // Debug log to check host details
-                if (host != null) {
-                    android.util.Log.d("LobbyAdapter", "Host found: ID=" + host.getUserId() + ", Username=" + host.getUsername());
-                } else {
-                    android.util.Log.d("LobbyAdapter", "Host is null for lobby: " + lobby.getLobbyId());
+                // Get actual host data
+                String hostId = lobby.getHostId();  // String ID of the host from lobby details
+
+                String hostUsernameToDisplay = "Unknown Host";
+        android.util.Log.i("LobbyAdapter", "Binding lobby: " + lobby.getLobbyName() + " (ID: " + lobby.getLobbyId() + "), Target Host ID: " + hostId);
+
+                // Priority 1: Check players list in the lobby object (JSON for this is good)
+                if (hostId != null && lobby.getPlayers() != null) {
+            android.util.Log.i("LobbyAdapter", "  Priority 1: Checking players list. Size: " + lobby.getPlayers().size());
+            for (User playerInList : lobby.getPlayers()) {
+                if (playerInList != null) {
+                    android.util.Log.i("LobbyAdapter", "    Inspecting player in list - ID: " + playerInList.getUserId() + ", Username: " + playerInList.getUsername());
+                    if (hostId.equals(playerInList.getUserId())) {
+                        android.util.Log.i("LobbyAdapter", "      Found potential host in list: " + playerInList.getUserId() + " with username '" + playerInList.getUsername() + "'");
+                    }
                 }
-                
-                // Use the actual host information or a fallback
-                String hostUsername = "";
-                if (host != null) {
-                    if (host.getUsername() != null && !host.getUsername().isEmpty()) {
-                        // Use the actual username
-                        hostUsername = host.getUsername();
-                        android.util.Log.d("LobbyAdapter", "Using actual host username: " + hostUsername);
-                    } else {
-                        // Host found but no username, use ID-based fallback
-                        String hostId = host.getUserId();
-                        if (hostId != null && !hostId.isEmpty()) {
-                            hostUsername = "Player-" + hostId.substring(0, Math.min(4, hostId.length()));
-                            android.util.Log.d("LobbyAdapter", "Host found but no username, using ID-based: " + hostUsername);
-                        } else {
-                            hostUsername = "Unknown Host";
-                            android.util.Log.d("LobbyAdapter", "Host found but no ID either, using 'Unknown Host'");
+            }
+                    for (User player : lobby.getPlayers()) {
+                        if (player != null && hostId.equals(player.getUserId())) {
+                            String pUsername = player.getUsername();
+                            if (pUsername != null && !pUsername.isEmpty() && !pUsername.startsWith("#")) {
+                        android.util.Log.i("LobbyAdapter", "      SUCCESS (Priority 1): Using username '" + pUsername + "' for host " + hostId);
+                                hostUsernameToDisplay = pUsername;
+                                break; // Found valid username for host in players list
+                            }
                         }
                     }
-                } else if (lobby.getHostId() != null && !lobby.getHostId().isEmpty()) {
-                    // No host found but we have hostId
-                    hostUsername = "Player-" + lobby.getHostId().substring(0, Math.min(4, lobby.getHostId().length()));
-                    android.util.Log.d("LobbyAdapter", "No host found, using ID-based: " + hostUsername);
-                } else {
-                    // No host information at all
-                    hostUsername = "Unknown Host";
-                    android.util.Log.d("LobbyAdapter", "No host information at all, using 'Unknown Host'");
+                }
+
+                // Priority 2: Check the dedicated host object from the lobby
+                // This is only if the players list didn't yield a valid username
+                if (hostUsernameToDisplay.equals("Unknown Host") && host != null) {
+            android.util.Log.i("LobbyAdapter", "  Priority 2: Checking User object from lobby.getHost(). UserID: " + host.getUserId() + ", Username: " + host.getUsername());
+                    String hUsername = host.getUsername();
+                    // Ensure username is valid and not a placeholder ID
+                    if (hUsername != null && !hUsername.isEmpty() && !hUsername.startsWith("#")) {
+                android.util.Log.i("LobbyAdapter", "      SUCCESS (Priority 2): Using username '" + hUsername + "' for host " + hostId);
+                        hostUsernameToDisplay = hUsername;
+                    }
                 }
                 
-                // Set host label correctly - JUST the username, not role
-                binding.tvHostName.setText("Host: " + hostUsername);
+                // After all checks, display the determined username or "Unknown Host".
+                // Priority 3: If we have a UserRepository and LifecycleOwner, fetch from API
+                if (hostUsernameToDisplay.equals("Unknown Host") && 
+                    userRepository != null && lifecycleOwner != null && hostId != null) {
+                    
+                    android.util.Log.i("LobbyAdapter", "  Priority 3: Fetching host from API. HostID: " + hostId);
+                    
+                    // Show loading state
+                    binding.tvHostName.setText("Host: Loading...");
+                    
+                    LiveData<Resource<User>> userResource = userRepository.getUserById(hostId);
+                    String finalHostUsernameToDisplay = hostUsernameToDisplay;
+                    userResource.observe(lifecycleOwner, new Observer<Resource<User>>() {
+                        @Override
+                        public void onChanged(Resource<User> resource) {
+                            if (resource.isSuccess() && resource.getData() != null) {
+                                String fetchedUsername = resource.getData().getUsername();
+                                android.util.Log.i("LobbyAdapter", "      SUCCESS (Priority 3): API returned username '" + 
+                                                  fetchedUsername + "' for host " + hostId);
+                                                  
+                                if (fetchedUsername != null && !fetchedUsername.isEmpty() && !fetchedUsername.startsWith("#")) {
+                                    binding.tvHostName.setText("Host: " + fetchedUsername);
+                                } else {
+                                    binding.tvHostName.setText("Host: " + finalHostUsernameToDisplay);
+                                }
+                                
+                                // Remove observer after we get the data
+                                userResource.removeObserver(this);
+                            } else if (resource.isError()) {
+                                android.util.Log.e("LobbyAdapter", "      FAILED (Priority 3): API error: " + resource.getMessage());
+                                binding.tvHostName.setText("Host: " + finalHostUsernameToDisplay);
+                                
+                                // Remove observer on error
+                                userResource.removeObserver(this);
+                            }
+                            // Don't remove observer on loading state
+                        }
+                    });
+                } else {
+                    // Fallback: Display whatever host name we have
+                    binding.tvHostName.setText("Host: " + hostUsernameToDisplay);
+                }
+        android.util.Log.i("LobbyAdapter", "Final host display name for lobby " + lobby.getLobbyId() + ": '" + hostUsernameToDisplay + "'");
                 
-                // Calculate ACCURATE player count - count the actual number of player objects
-                int actualPlayerCount = 0;
+                // Calculate ACCURATE player count including the host
+                int playerCount = 0;
+                java.util.Set<String> countedPlayerIds = new java.util.HashSet<>();
+                
+                // Count players in the player list
                 if (lobby.getPlayers() != null) {
-                    actualPlayerCount = lobby.getPlayers().size();
-                    // Log all players for debugging
-                    StringBuilder playerLog = new StringBuilder("Players in lobby " + lobby.getLobbyId() + ": ");
                     for (User player : lobby.getPlayers()) {
-                        String playerName = player.getUsername() != null ? player.getUsername() : "Unknown";
-                        String playerId = player.getUserId() != null ? player.getUserId() : "Unknown";
-                        playerLog.append(playerName).append("(").append(playerId).append("), ");
+                        if (player != null && player.getUserId() != null && !player.getUserId().isEmpty()) {
+                            countedPlayerIds.add(player.getUserId());
+                            playerCount++;
+                        }
                     }
-                    android.util.Log.d("LobbyAdapter", playerLog.toString());
+                    
+                    // Player list exists, count is correct
+                }
+                
+                // Make sure host is counted if not already in the player list
+                if (host != null && host.getUserId() != null && !host.getUserId().isEmpty() && 
+                    !countedPlayerIds.contains(host.getUserId())) {
+                    playerCount++;
                 }
                 
                 // Ensure we always show the player count accurately, even if zero
-                binding.tvPlayerCount.setText("Players: " + actualPlayerCount + "/" + lobby.getMaxPlayers());
+                binding.tvPlayerCount.setText("Players: " + playerCount + "/" + lobby.getMaxPlayers());
                 
-                // Get ACTUAL round settings from server data
-                // First try the getNumRounds method
+                // Get round settings
                 int rounds = lobby.getNumRounds();
-                // Fallback to getRounds if it seems like a default value
+                // Fallback to getRounds if needed
                 if (rounds <= 0) {
                     rounds = lobby.getRounds();
                 }
-                android.util.Log.d("LobbyAdapter", "Displaying rounds: " + rounds);
-                binding.tvRounds.setText("Rounds: " + rounds);
+                if (rounds > 0) {
+                    binding.tvRounds.setText("Rounds: " + rounds);
+                }
                 
-                // Get ACTUAL duration from server data
-                // First try getRoundDurationSeconds method
+                // Get round duration
                 int duration = lobby.getRoundDurationSeconds();
-                // Fallback to getRoundDuration if it seems like a default value
+                // Fallback to getRoundDuration if needed
                 if (duration <= 0) {
                     duration = lobby.getRoundDuration();
                 }
-                android.util.Log.d("LobbyAdapter", "Displaying duration: " + duration + "s");
-                binding.tvRoundDuration.setText("Duration: " + duration + "s");
+                if (duration > 0) {
+                    binding.tvRoundDuration.setText("Duration: " + duration + "s");
+                }
                 
                 // Show lock icon if lobby is locked
                 binding.iconLock.setVisibility(lobby.isLocked() ? View.VISIBLE : View.GONE);
@@ -175,13 +251,7 @@ public class LobbyAdapter extends RecyclerView.Adapter<LobbyAdapter.LobbyViewHol
                     }
                 });
                 
-                // Comprehensive debug log of the exact lobby data we're displaying
-                android.util.Log.d("LobbyAdapter", "Full lobby data - ID: " + lobby.getLobbyId() + 
-                        ", Name: " + lobbyName + 
-                        ", Host: " + hostUsername + " (ID: " + lobby.getHostId() + ")" +
-                        ", Players: " + actualPlayerCount + "/" + lobby.getMaxPlayers() + 
-                        ", Rounds: " + rounds + 
-                        ", Duration: " + duration + "s");
+                // Lobby data fully bound
             } catch (Exception e) {
                 // Robust error handling to prevent crashes
                 android.util.Log.e("LobbyAdapter", "Error binding lobby data", e);

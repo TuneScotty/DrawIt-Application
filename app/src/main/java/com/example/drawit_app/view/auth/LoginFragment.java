@@ -99,23 +99,7 @@ public class LoginFragment extends Fragment {
     }
     
     private void observeViewModel() {
-        // Add direct observer on login API response
-        authViewModel.getDirectLoginResponse().observe(getViewLifecycleOwner(), response -> {
-            Log.d("LoginFragment", "Direct login response received: " + (response != null));
-            if (response != null && response.isSuccess() && response.getData() != null) {
-                // Force handling of successful login regardless of auth state
-                showLoading(false);
-                User user = response.getData().getUser();
-                if (user != null) {
-                    Log.d("LoginFragment", "Forcing navigation with direct response");
-                    Toast.makeText(requireContext(), "Welcome " + user.getUsername() + "!", Toast.LENGTH_SHORT).show();
-                    navController.navigate(R.id.action_loginFragment_to_lobbiesFragment);
-                    return; // Exit early to avoid auth state handling conflicts
-                }
-            }
-        });
-        
-        // Original auth state observer as backup
+        // Single streamlined auth state observer for consistent behavior
         authViewModel.getLoginResult().observe(getViewLifecycleOwner(), result -> {
             // Debug logging to track authentication state
             Log.d("LoginFragment", "Auth state updated: authenticated=" + result.isAuthenticated() + 
@@ -125,44 +109,59 @@ public class LoginFragment extends Fragment {
             
             if (result.isLoading()) {
                 showLoading(true);
-            } else {
-                showLoading(false);
+                return;
+            }
+            
+            // Always ensure loading is hidden when not in loading state
+            showLoading(false);
+            
+            // Check authentication result
+            if (result.isAuthenticated() && result.getUser() != null) {
+                // Successfully authenticated with user data
+                User user = result.getUser();
+                Log.d("LoginFragment", "Login successful for user: " + user.getUsername());
                 
-                // Add explicit debug log about the resource state
-                Log.d("LoginFragment", "Processing login response, auth state check completed");
+                // Display welcome message
+                Toast.makeText(requireContext(), 
+                        "Welcome, " + user.getUsername() + "!", 
+                        Toast.LENGTH_SHORT).show();
                 
-                // Check if authentication was successful based on API response data
-                if (result.isAuthenticated() && result.getUser() != null) {
-                    // Authentication successful with user data - normal case
-                    Log.d("LoginFragment", "Login successful with user data, navigating to lobbies");
-                    Toast.makeText(requireContext(), "Welcome " + result.getUser().getUsername() + "!", Toast.LENGTH_SHORT).show();
-                    navController.navigate(R.id.action_loginFragment_to_lobbiesFragment);
-                } else if (result.isSuccess() && !result.isAuthenticated()) {
-                    // This handles the case where we got a success response but the AuthState doesn't have authenticated=true
-                    // This could happen if the auth state is not properly updated
-                    Log.d("LoginFragment", "Success response but not authenticated, checking user repo");
-                    
-                    // Check if user is stored in repository
-                    authViewModel.getUserProfile().observe(getViewLifecycleOwner(), user -> {
-                        if (user != null) {
-                            Log.d("LoginFragment", "Found user in repository, proceeding with login");
-                            Toast.makeText(requireContext(), "Welcome " + user.getUsername() + "!", Toast.LENGTH_SHORT).show();
-                            navController.navigate(R.id.action_loginFragment_to_lobbiesFragment);
-                        }
-                    });
-                } else if (result.hasError()) {
-                    // Show error message for invalid credentials
-                    Log.d("LoginFragment", "Login error: " + result.getErrorMessage());
+                // Navigate to the lobbies screen
+                navController.navigate(R.id.action_loginFragment_to_lobbiesFragment);
+            } else if (result.hasError()) {
+                // Show specific error message
+                String errorMessage = result.getErrorMessage();
+                Log.d("LoginFragment", "Login error: " + errorMessage);
+                
+                // Display user-friendly error message
+                if (errorMessage != null && errorMessage.contains("credentials")) {
+                    // Invalid credentials error
                     Toast.makeText(requireContext(), 
-                            result.getErrorMessage(), 
+                            "Invalid username or password. Please try again.", 
                             Toast.LENGTH_LONG).show();
-                } else if (!result.isLoading()) {
-                    // This handles the case when login fails but doesn't have an explicit error message
-                    Log.d("LoginFragment", "Login failed without explicit error message");
+                } else if (errorMessage != null && errorMessage.contains("network")) {
+                    // Network error
                     Toast.makeText(requireContext(), 
-                            "Login failed. Please check your credentials and try again.", 
+                            "Network error. Please check your connection and try again.", 
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    // Generic error
+                    Toast.makeText(requireContext(), 
+                            errorMessage != null ? errorMessage : "Login failed. Please try again.", 
                             Toast.LENGTH_LONG).show();
                 }
+                
+                // Reset password field for security
+                binding.etPassword.setText("");
+            } else if (!result.isLoading() && !result.isAuthenticated()) {
+                // This handles the case when login fails but doesn't have an explicit error message
+                Log.d("LoginFragment", "Login failed without authentication");
+                Toast.makeText(requireContext(), 
+                        "Login failed. Please check your credentials and try again.", 
+                        Toast.LENGTH_LONG).show();
+                        
+                // Reset password field for security
+                binding.etPassword.setText("");
             }
         });
     }

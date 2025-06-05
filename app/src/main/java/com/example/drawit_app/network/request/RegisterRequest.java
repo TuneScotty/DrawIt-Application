@@ -10,6 +10,7 @@ public class RegisterRequest {
     private String username;
     private String password;
     private String email;
+    private String deviceId; // For tracking sessions and security
     
     public RegisterRequest(String username, String password, String email) {
         this.username = username;
@@ -39,5 +40,13 @@ public class RegisterRequest {
     
     public void setEmail(String email) {
         this.email = email;
+    }
+    
+    public String getDeviceId() {
+        return deviceId;
+    }
+    
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
     }
 }

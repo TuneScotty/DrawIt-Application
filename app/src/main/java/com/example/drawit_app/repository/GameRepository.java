@@ -11,6 +11,7 @@ import com.example.drawit_app.model.User;
 import com.example.drawit_app.network.ApiService;
 import com.example.drawit_app.network.WebSocketService;
 import com.example.drawit_app.network.message.GameStateMessage;
+import com.example.drawit_app.util.WebSocketMessageConverter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,11 +24,73 @@ import javax.inject.Singleton;
  */
 @Singleton
 public class GameRepository extends BaseRepository {
+
+    // Required by BaseRepository
+    @Override
+    public void onFailure(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<com.example.drawit_app.network.response.LobbyListResponse>> call, Throwable t) {
+        android.util.Log.e("GameRepository", "API call failed: " + t.getMessage(), t);
+        // Optionally, update a LiveData or some state to reflect this failure
+        // For example: setError("Failed to perform game operation: " + t.getMessage());
+    }
+    
+    /**
+     * Override handleExpiredToken from BaseRepository
+     * Delegates to UserRepository for token refresh and handling
+     */
+    @Override
+    protected <T> void handleExpiredToken(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<T>> originalCall, MutableLiveData<Resource<T>> result) {
+        android.util.Log.d("GameRepository", "Token expired in GameRepository, delegating to UserRepository");
+        
+        // Get the current token (even if expired) from UserRepository
+        String currentToken = userRepository.getAuthToken();
+        if (currentToken == null) {
+            android.util.Log.e("GameRepository", "No token available for refresh");
+            result.postValue(Resource.error("Not authenticated", null));
+            return;
+        }
+        
+        // Use UserRepository to refresh the token
+        userRepository.refreshToken(currentToken, refreshSuccess -> {
+            if (refreshSuccess) {
+                android.util.Log.d("GameRepository", "Token refreshed successfully via UserRepository, retrying original request");
+                
+                try {
+                    // Clone the original call
+                    retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<T>> newCall = 
+                            (retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<T>>) originalCall.clone();
+                    
+                    // Execute the cloned call with the retry flag set to true
+                    LiveData<Resource<T>> retryResult = callApi(newCall, true);
+                    
+                    // Forward the retry result to the original result
+                    androidx.lifecycle.Observer<Resource<T>> observer = new androidx.lifecycle.Observer<Resource<T>>() {
+                        @Override
+                        public void onChanged(Resource<T> resource) {
+                            // Update the result with the resource
+                            result.postValue(resource);
+                            // Remove the observer after first update to prevent memory leaks
+                            retryResult.removeObserver(this);
+                        }
+                    };
+                    // Observe the retry result
+                    retryResult.observeForever(observer);
+                } catch (Exception e) {
+                    android.util.Log.e("GameRepository", "Error retrying request after token refresh: " + e.getMessage());
+                    result.postValue(Resource.error("Error retrying request: " + e.getMessage(), null));
+                }
+            } else {
+                android.util.Log.e("GameRepository", "Token refresh failed");
+                result.postValue(Resource.error("Session expired, please login again", null));
+            }
+        });
+    }
+
     
     private final ApiService apiService;
-    private final GameDao gameDao;
     private final UserRepository userRepository;
+    private final GameDao gameDao;
     private final WebSocketService webSocketService;
+    private final WebSocketMessageConverter messageConverter;
     
     private final MutableLiveData<Game> currentGame = new MutableLiveData<>();
     private final MutableLiveData<Integer> timeRemaining = new MutableLiveData<>();
@@ -40,11 +103,13 @@ public class GameRepository extends BaseRepository {
     
     @Inject
     public GameRepository(ApiService apiService, DrawItDatabase database, 
-                         UserRepository userRepository, WebSocketService webSocketService) {
+                         UserRepository userRepository, WebSocketService webSocketService,
+                         WebSocketMessageConverter messageConverter) {
         this.apiService = apiService;
         this.gameDao = database.gameDao();
         this.userRepository = userRepository;
         this.webSocketService = webSocketService;
+        this.messageConverter = messageConverter;
         
         // Initialize WebSocket callback for game updates
         setupWebSocketCallback();
@@ -65,35 +130,45 @@ public class GameRepository extends BaseRepository {
         webSocketService.setGameUpdateCallback(new WebSocketService.GameUpdateCallback() {
             @Override
             public void onGameStateChanged(GameStateMessage message) {
-                GameStateMessage.GamePayload payload = message.getGamePayload();
-                if (payload != null && payload.getGame() != null) {
-                    Game updatedGame = payload.getGame();
-                    
-                    // Update current game if it's the one we're in
-                    if (currentGame.getValue() != null && 
-                        currentGame.getValue().getGameId().equals(updatedGame.getGameId())) {
-                        
-                        // If game has drawings, set them on the current game
-                        if (payload.getDrawings() != null) {
-                            updatedGame.setCurrentRoundDrawings(payload.getDrawings());
+                try {
+                    GameStateMessage.GamePayload payload = message.getGamePayload();
+                    if (payload != null && payload.getGame() != null) {
+                        // Use messageConverter to safely convert game object if needed
+                        Game updatedGame = messageConverter.convertToGame(payload.getGame());
+                        if (updatedGame == null) {
+                            android.util.Log.e("GameRepository", "Failed to convert game object");
+                            return;
                         }
-                        
-                        // If game has player scores, set them on the current game
-                        if (payload.getPlayerScores() != null) {
-                            updatedGame.setPlayerScores(payload.getPlayerScores());
+
+                        // Update current game if it's the one we're in
+                        if (currentGame.getValue() != null &&
+                            currentGame.getValue().getGameId().equals(updatedGame.getGameId())) {
+
+                            // If game has drawings, safely convert and set them on the current game
+                            if (payload.getDrawings() != null) {
+                                // If drawings need conversion, we could use messageConverter here
+                                updatedGame.setCurrentRoundDrawings(payload.getDrawings());
+                            }
+
+                            // If game has player scores, set them on the current game
+                            if (payload.getPlayerScores() != null) {
+                                updatedGame.setPlayerScores(payload.getPlayerScores());
+                            }
+
+                            currentGame.postValue(updatedGame);
+
+                            // Update time remaining
+                            timeRemaining.postValue(payload.getTimeRemainingSeconds());
                         }
-                        
-                        currentGame.postValue(updatedGame);
-                        
-                        // Update time remaining
-                        timeRemaining.postValue(payload.getTimeRemainingSeconds());
+
+                        // Update in local database
+                        gameDao.insert(updatedGame);
                     }
-                    
-                    // Update in local database
-                    gameDao.insert(updatedGame);
+                } catch (Exception e) {
+                    android.util.Log.e("GameRepository", "Error processing game state: " + e.getMessage(), e);
                 }
             }
-            
+
             @Override
             public void onError(String errorMessage) {
                 // Handle WebSocket error

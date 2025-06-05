@@ -3,9 +3,11 @@ package com.example.drawit_app.data;
 import androidx.room.TypeConverter;
 
 import com.example.drawit_app.model.Drawing.DrawingPath;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
+import com.squareup.moshi.JsonAdapter;
+import com.squareup.moshi.Moshi;
+import com.squareup.moshi.Types;
 
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,14 +17,17 @@ import java.util.List;
  */
 public class DrawingPathsConverter {
     
-    private static final Gson gson = new Gson();
+    private static final Moshi moshi = new Moshi.Builder().build();
     
     @TypeConverter
     public static String fromDrawingPaths(List<DrawingPath> paths) {
         if (paths == null) {
             return null;
         }
-        return gson.toJson(paths);
+        
+        Type type = Types.newParameterizedType(List.class, DrawingPath.class);
+        JsonAdapter<List<DrawingPath>> adapter = moshi.adapter(type);
+        return adapter.toJson(paths);
     }
     
     @TypeConverter
@@ -30,7 +35,15 @@ public class DrawingPathsConverter {
         if (pathsJson == null) {
             return new ArrayList<>();
         }
-        Type type = new TypeToken<List<DrawingPath>>() {}.getType();
-        return gson.fromJson(pathsJson, type);
+        
+        Type type = Types.newParameterizedType(List.class, DrawingPath.class);
+        JsonAdapter<List<DrawingPath>> adapter = moshi.adapter(type);
+        try {
+            List<DrawingPath> result = adapter.fromJson(pathsJson);
+            return result != null ? result : new ArrayList<>();
+        } catch (IOException e) {
+            android.util.Log.e("DrawingPathsConverter", "Error converting JSON to drawing paths", e);
+            return new ArrayList<>();
+        }
     }
 }

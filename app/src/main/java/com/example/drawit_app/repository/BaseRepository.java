@@ -4,6 +4,7 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
 import com.example.drawit_app.network.response.ApiResponse;
+import com.example.drawit_app.network.response.LobbyListResponse;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -33,6 +34,16 @@ public abstract class BaseRepository {
     }
     
     protected <T> LiveData<Resource<T>> callApi(Call<ApiResponse<T>> call) {
+        return callApi(call, false); // Default: not a retry
+    }
+    
+    /**
+     * Extended callApi method that supports token refresh and retry
+     * @param call The API call to execute
+     * @param isRetry Whether this is a retry after token refresh
+     * @return LiveData with the result
+     */
+    protected <T> LiveData<Resource<T>> callApi(Call<ApiResponse<T>> call, boolean isRetry) {
         MutableLiveData<Resource<T>> result = new MutableLiveData<>();
         // Use postValue for the initial loading state since this might not be on the main thread
         result.postValue(Resource.loading(null));
@@ -42,6 +53,7 @@ public abstract class BaseRepository {
         android.util.Log.d("APICall", "URL: " + call.request().url());
         android.util.Log.d("APICall", "Method: " + call.request().method());
         android.util.Log.d("APICall", "Headers: " + call.request().headers());
+        android.util.Log.d("APICall", "Is retry: " + isRetry);
         
         // Try to log the request body if possible
         try {
@@ -98,16 +110,24 @@ public abstract class BaseRepository {
                     } catch (Exception e) {
                         android.util.Log.d("APICall", "Failed to read error body");
                     }
-                    result.postValue(Resource.error("Request failed: " + response.message(), null));
-                    android.util.Log.d("APICall", "Setting error result: Request failed: " + response.message());
+                    
+                    // Check for expired token (HTTP 403)
+                    if (response.code() == 403 && !isRetry) {
+                        android.util.Log.d("APICall", "Received 403 (Forbidden) - possibly expired token");
+                        handleExpiredToken(call, result);
+                    } else {
+                        String errorMessage = "HTTP Error " + response.code() + ": " + response.message();
+                        result.postValue(Resource.error(errorMessage, null));
+                        android.util.Log.d("APICall", "Setting error result: " + errorMessage);
+                    }
                 }
             }
             
             @Override
             public void onFailure(Call<ApiResponse<T>> call, Throwable t) {
-                android.util.Log.d("APICall", "Request failed with exception: " + t.getMessage());
-                t.printStackTrace();
+                android.util.Log.d("APICall", "Call failed: " + t.getMessage());
                 result.postValue(Resource.error("Network error: " + t.getMessage(), null));
+                onFailure(call, t); // Call the abstract method
             }
         });
         
@@ -115,11 +135,25 @@ public abstract class BaseRepository {
     }
     
     /**
+     * Handle expired token by refreshing it and retrying the original request
+     * @param originalCall The original API call that failed due to expired token
+     * @param result The MutableLiveData to update with the result
+     */
+    protected <T> void handleExpiredToken(Call<ApiResponse<T>> originalCall, MutableLiveData<Resource<T>> result) {
+        // This must be implemented by subclasses that have access to UserRepository
+        // Default implementation just returns error
+        android.util.Log.e("BaseRepository", "Token refresh required but not implemented in this repository");
+        result.postValue(Resource.error("Session expired, please login again", null));
+    }
+
+    public abstract void onFailure(Call<ApiResponse<LobbyListResponse>> call, Throwable t) // End of onFailure
+    ;
+
+    /**
      * Resource wrapper class that represents the state of a network operation
      */
     public static class Resource<T> {
         public enum Status { SUCCESS, ERROR, LOADING }
-        
         private final Status status;
         private final T data;
         private final String message;

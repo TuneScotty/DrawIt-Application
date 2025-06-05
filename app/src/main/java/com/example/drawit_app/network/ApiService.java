@@ -8,6 +8,7 @@ import com.example.drawit_app.network.request.AuthRequest;
 import com.example.drawit_app.network.request.CreateLobbyRequest;
 import com.example.drawit_app.network.request.JoinLobbyRequest;
 import com.example.drawit_app.network.request.RateDrawingRequest;
+import com.example.drawit_app.network.request.RefreshTokenRequest;
 import com.example.drawit_app.network.request.RegisterRequest;
 import com.example.drawit_app.network.request.UpdateProfileRequest;
 import com.example.drawit_app.network.response.ApiResponse;
@@ -41,12 +42,19 @@ public interface ApiService {
     @POST("auth/logout")
     Call<ApiResponse<Void>> logout(@Header("Authorization") String token, @Query("deviceId") String deviceId);
     
+    @POST("auth/refresh-token")
+    Call<ApiResponse<AuthResponse>> refreshToken(@Body RefreshTokenRequest request);
+    
     // User profile endpoints
     @GET("users/profile")
     Call<ApiResponse<User>> getCurrentUser(@Header("Authorization") String token);
     
     @PUT("users/profile")
     Call<ApiResponse<User>> updateProfile(@Header("Authorization") String token, @Body UpdateProfileRequest request);
+    
+    // Get user by ID endpoint
+    @GET("users/{userId}")
+    Call<ApiResponse<User>> getUserById(@Header("Authorization") String token, @Path("userId") String userId);
     
     // Lobby endpoints
     @GET("lobbies")
@@ -59,7 +67,7 @@ public interface ApiService {
     Call<ApiResponse<Lobby>> getLobbyDetails(@Header("Authorization") String token, @Path("lobbyId") String lobbyId);
     
     @POST("lobbies/{lobbyId}/join")
-    Call<ApiResponse<Lobby>> joinLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId, JoinLobbyRequest joinLobbyRequest);
+    Call<ApiResponse<Lobby>> joinLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId, @Body JoinLobbyRequest joinLobbyRequest);
     
     @DELETE("lobbies/{lobbyId}/leave")
     Call<ApiResponse<Void>> leaveLobby(@Header("Authorization") String token, @Path("lobbyId") String lobbyId);

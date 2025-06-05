@@ -30,6 +30,9 @@ public interface LobbyDao {
     @Query("SELECT * FROM lobbies WHERE lobbyId = :lobbyId")
     LiveData<Lobby> getLobbyById(String lobbyId);
     
+    @Query("SELECT * FROM lobbies WHERE lobbyId = :lobbyId")
+    Lobby getLobbyByIdDirect(String lobbyId);
+    
     @Query("SELECT * FROM lobbies WHERE isLocked = 0")
     LiveData<List<Lobby>> getAvailableLobbies();
     

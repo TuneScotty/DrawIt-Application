@@ -1,5 +1,7 @@
 package com.example.drawit_app.network.request;
 
+import com.squareup.moshi.Json;
+
 /**
  * Request model for creating a new lobby
  */
@@ -7,7 +9,12 @@ public class CreateLobbyRequest {
     // Use exact field names as expected by the server
     private String name; // Changed from lobbyName to name as required by the server
     private int maxPlayers;
+    
+    // Note: Based on the lobby JSON structure from the server, we need to use these exact field names
+    @Json(name = "numRounds")
     private int numRounds;
+    
+    @Json(name = "roundDurationSeconds")
     private int roundDurationSeconds;
     
     public CreateLobbyRequest(String lobbyName, int maxPlayers, int numRounds, int roundDurationSeconds) {
@@ -16,7 +23,7 @@ public class CreateLobbyRequest {
         this.numRounds = numRounds;
         this.roundDurationSeconds = roundDurationSeconds;
     }
-    
+
     // Keeping both getter methods for backward compatibility
     public String getName() {
         return name;
@@ -33,6 +40,8 @@ public class CreateLobbyRequest {
     public void setLobbyName(String lobbyName) {
         this.name = lobbyName;
     }
+
+    // Host getter and setter methods removed as the host field is no longer used
     
     public int getMaxPlayers() {
         return maxPlayers;

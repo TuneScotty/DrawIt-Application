@@ -11,7 +11,6 @@ import com.example.drawit_app.data.DrawingPathsConverter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Represents a drawing created by a player in a game round.

@@ -11,7 +11,7 @@ import java.util.List;
  */
 public class LobbyStateMessage extends WebSocketMessage {
     
-    public LobbyStateMessage() {
+    public LobbyStateMessage(Lobby lobby) {
         super("lobby_state", null);
     }
     
@@ -32,6 +32,9 @@ public class LobbyStateMessage extends WebSocketMessage {
         
         @Json(name = "players")
         private List<User> players;
+        
+        @Json(name = "hostUser")
+        private User hostUser; // Host user details at payload level
         
         @Json(name = "event")
         private String event; // "joined", "left", "locked", "unlocked", "settings_updated"
@@ -56,6 +59,14 @@ public class LobbyStateMessage extends WebSocketMessage {
         
         public void setPlayers(List<User> players) {
             this.players = players;
+        }
+        
+        public User getHostUser() {
+            return hostUser;
+        }
+        
+        public void setHostUser(User hostUser) {
+            this.hostUser = hostUser;
         }
         
         public String getEvent() {

@@ -18,12 +18,6 @@ public class LobbyListResponse {
     public void setLobbies(List<Lobby> lobbies) {
         this.lobbies = lobbies;
     }
-    
-    public int getTotalCount() {
-        return totalCount;
-    }
-    
-    public void setTotalCount(int totalCount) {
-        this.totalCount = totalCount;
-    }
+
+    public int getTotalCount() { return totalCount; }
 }

@@ -2,6 +2,8 @@ package com.example.drawit_app.view.game;
 
 import android.os.Bundle;
 import android.os.CountDownTimer;
+import android.os.Handler;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -76,15 +78,33 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
             return;
         }
         
+        // Show loading state
+        binding.progressBarGame.setVisibility(View.VISIBLE);
+        binding.gameContentContainer.setVisibility(View.GONE);
+        
         setupRecyclerViews();
         setupListeners();
         observeViewModel();
         
         // Set WebSocket callback
         drawingViewModel.setGameUpdateCallback(this);
+
+        Log.d("GameFragment", "Joining game with ID: " + gameId);
         
-        // Join game
+        // Join game with a timeout to ensure we don't get stuck if WebSocket fails
         drawingViewModel.joinGame(gameId);
+        
+        // Add a safety timeout to check if we've received game data
+        new Handler().postDelayed(() -> {
+            if (isAdded() && binding != null && drawingViewModel.getCurrentGame().getValue() == null) {
+                // If after 5 seconds we still don't have game data, show an error
+                binding.progressBarGame.setVisibility(View.GONE);
+                Toast.makeText(requireContext(), "Failed to load game data. Please try again.", Toast.LENGTH_SHORT).show();
+                Log.e("GameFragment", "Timed out waiting for game data");
+                // Go back to the lobby
+                navController.navigateUp();
+            }
+        }, 5000);
     }
     
     private void setupRecyclerViews() {
@@ -200,6 +220,15 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
     }
     
     private void updateGameState(Game game) {
+        Log.d("GameFragment", "Game state updated: " + game.getGameId() + ", state: " + game.getState());
+
+        // First, hide loading indicator and show game content when we first get game data
+        if (binding.progressBarGame.getVisibility() == View.VISIBLE) {
+            binding.progressBarGame.setVisibility(View.GONE);
+            binding.gameContentContainer.setVisibility(View.VISIBLE);
+            Log.d("GameFragment", "Game content is now visible");
+        }
+
         // Update round and game info
         binding.tvRound.setText(getString(R.string.round_format, game.getCurrentRound(), game.getTotalRounds()));
         

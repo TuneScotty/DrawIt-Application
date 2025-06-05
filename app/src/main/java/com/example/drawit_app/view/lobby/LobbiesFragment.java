@@ -29,12 +29,13 @@ import com.example.drawit_app.R;
 import com.example.drawit_app.databinding.FragmentLobbiesBinding;
 import com.example.drawit_app.databinding.DialogCreateLobbyBinding;
 import com.example.drawit_app.model.Lobby;
+import com.example.drawit_app.repository.UserRepository;
 import com.example.drawit_app.view.adapter.LobbyAdapter;
 import com.example.drawit_app.viewmodel.LobbyViewModel;
 
+import javax.inject.Inject;
+
 import java.util.ArrayList;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 
 import dagger.hilt.android.AndroidEntryPoint;
 
@@ -48,6 +49,11 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
     private LobbyViewModel lobbyViewModel;
     private NavController navController;
     private LobbyAdapter lobbyAdapter;
+    
+    @Inject
+    UserRepository userRepository;
+    
+
     
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -102,7 +108,8 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
     }
     
     private void setupRecyclerView() {
-        lobbyAdapter = new LobbyAdapter(new ArrayList<>(), this);
+        // Use the new constructor with UserRepository for automatic host username fetching
+        lobbyAdapter = new LobbyAdapter(new ArrayList<>(), this, userRepository, getViewLifecycleOwner());
         binding.rvLobbies.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.rvLobbies.setAdapter(lobbyAdapter);
     }
@@ -117,7 +124,11 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
     
     private void observeViewModel() {
         // Observe lobbies list
-        lobbyViewModel.getLobbies().observe(getViewLifecycleOwner(), lobbies -> {
+        lobbyViewModel.getLobbiesState().observe(getViewLifecycleOwner(), lobbiesState -> {
+            if (lobbiesState == null || lobbiesState.getLobbies() == null) return;
+            
+            // Get lobbies from state
+            ArrayList<Lobby> lobbies = new ArrayList<>(lobbiesState.getLobbies());
             lobbyAdapter.updateLobbies(lobbies);
             
             // Show empty state if no lobbies
@@ -148,30 +159,44 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
             }
         });
         
-        // Observe error messages
-        lobbyViewModel.getErrorMessage().observe(getViewLifecycleOwner(), errorMsg -> {
+        // Observe error messages from lobbies state
+        lobbyViewModel.getLobbiesState().observe(getViewLifecycleOwner(), lobbiesState -> {
+            String errorMsg = lobbiesState != null ? lobbiesState.getErrorMessage() : null;
             if (errorMsg != null && !errorMsg.isEmpty()) {
                 Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_SHORT).show();
             }
         });
         
-        // Observe newly created lobbies to navigate to the detail screen
-        lobbyViewModel.getNewlyCreatedLobby().observe(getViewLifecycleOwner(), createdLobby -> {
-            if (createdLobby != null) {
+        // Observe lobby events to handle navigation
+        lobbyViewModel.getLobbyEvent().observe(getViewLifecycleOwner(), lobbyEvent -> {
+            if (lobbyEvent != null && lobbyEvent.type == LobbyViewModel.LobbyEventType.LOBBY_CREATED && lobbyEvent.lobby != null) {
                 // Navigate to the lobby detail screen with the newly created lobby
+                Lobby createdLobby = lobbyEvent.lobby;
+                String lobbyId = createdLobby.getLobbyId();
+                String name = createdLobby.getLobbyName();
+                
+                // Ensure we have a valid lobby name (can't be null for navigation args)
+                if (name == null) {
+                    name = "Unnamed Lobby";
+                    Log.w("LobbiesFragment", "Created lobby has null name, using default");
+                }
+                
+                // Log the values to help debug
+                Log.d("LobbiesFragment", "Navigating to lobby: id=" + lobbyId + ", name=" + name);
+                
                 Bundle args = new Bundle();
-                args.putString("lobbyId", createdLobby.getId());
-                args.putString("lobbyName", createdLobby.getName());
+                args.putString("lobbyId", lobbyId);
+                args.putString("lobbyName", name);
                 navController.navigate(R.id.action_lobbiesFragment_to_lobbyDetailFragment, args);
                 
-                // Reset the LiveData value to prevent re-triggering on configuration change
-                lobbyViewModel.resetNewlyCreatedLobby();
+                // Reset the event to prevent re-triggering on configuration change
+                lobbyViewModel.resetEvent();
             }
         });
     }
     
     private void refreshLobbies() {
-        lobbyViewModel.fetchLobbies();
+        lobbyViewModel.refreshLobbies();
     }
     
     private void showCreateLobbyDialog() {
@@ -225,56 +250,6 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
         });
         
         dialog.show();
-        
-        // Set positive button click listener
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            // First validate all inputs
-            if (!validateLobbyInput(dialogBinding)) {
-                return; // Don't proceed if validation fails
-            }
-            
-            // Only parse values after validation passes
-            AtomicReference<String> lobbyName = new AtomicReference<>(Objects.requireNonNull(dialogBinding.etLobbyName.getText()).toString().trim());
-            int maxPlayers = Integer.parseInt(dialogBinding.etMaxPlayers.getText().toString().trim());
-            int rounds = Integer.parseInt(dialogBinding.etRounds.getText().toString().trim());
-            int roundDuration = Integer.parseInt(dialogBinding.etRoundDuration.getText().toString().trim());
-
-            // If we get here, validation passed
-            dialog.dismiss();
-            
-            // Show loading indicator
-            binding.progressBar.setVisibility(View.VISIBLE);
-            
-            // Create the lobby and register a callback for the response
-            lobbyViewModel.createLobby(lobbyName.get(), maxPlayers, rounds, roundDuration).observe(getViewLifecycleOwner(), resource -> {
-                // Hide loading indicator
-                binding.progressBar.setVisibility(View.GONE);
-                
-                if (resource.isSuccess() && resource.getData() != null) {
-                    Lobby createdLobby = resource.getData();
-                    String lobbyId = createdLobby.getId();
-                    lobbyName.set(createdLobby.getName());
-                    
-                    // Make sure we have valid data before navigating
-                    if (lobbyId == null || lobbyName.get() == null) {
-                        Log.e("LobbiesFragment", "Invalid lobby data - ID: " + lobbyId + ", name: " + lobbyName);
-                        Toast.makeText(requireContext(), "Error: Invalid lobby data", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    
-                    Log.d("LobbiesFragment", "Lobby created successfully: " + lobbyId + ", name: " + lobbyName);
-                    
-                    // Navigate directly to the lobby detail screen
-                    Bundle args = new Bundle();
-                    args.putString("lobbyId", lobbyId);
-                    args.putString("lobbyName", lobbyName.get());
-                    navController.navigate(R.id.action_lobbiesFragment_to_lobbyDetailFragment, args);
-                } else if (resource.isError()) {
-                    // Show error message
-                    Toast.makeText(requireContext(), "Failed to create lobby: " + resource.getMessage(), Toast.LENGTH_SHORT).show();
-                }
-            });
-        });
     }
 
     private void setupMaxPlayersDropdown(AutoCompleteTextView dropdown) {
@@ -308,10 +283,10 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
         boolean isValid = true;
         
         // Reset errors
-        dialogBinding.etLobbyName.setError(null);
-        dialogBinding.etMaxPlayers.setError(null);
-        dialogBinding.etRounds.setError(null);
-        dialogBinding.etRoundDuration.setError(null);
+        dialogBinding.tilLobbyName.setError(null);
+        dialogBinding.tilMaxPlayers.setError(null);
+        dialogBinding.tilRounds.setError(null);
+        dialogBinding.tilRoundDuration.setError(null);
         
         // Validate lobby name
         String lobbyName = dialogBinding.etLobbyName.getText().toString().trim();
@@ -389,9 +364,9 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
     @Override
     public void onLobbyClick(Lobby lobby) {
         // Navigate to lobby detail screen
-        String lobbyId = lobby.getId();
+        String lobbyId = lobby.getLobbyId();
         // Ensure we have a valid lobby name - never pass null to Bundle.putString
-        String lobbyName = lobby.getName();
+        String lobbyName = lobby.getLobbyName();
         if (lobbyName == null) {
             lobbyName = "Unnamed Lobby";
             // Log the issue for debugging
@@ -410,30 +385,8 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
         binding = null;
     }
     
-    /**
-     * Helper method to create a lobby with the given parameters
-     */
     private void createLobby(String lobbyName, int maxPlayers, int rounds, int roundDuration) {
-        // Create the lobby and register a callback for the response
-        lobbyViewModel.createLobby(lobbyName, maxPlayers, rounds, roundDuration).observe(getViewLifecycleOwner(), resource -> {
-            // Hide loading indicator
-            binding.progressBar.setVisibility(View.GONE);
-            
-            if (resource.isSuccess() && resource.getData() != null) {
-                Lobby createdLobby = resource.getData();
-                
-                // Get lobby data directly from response
-                String lobbyId = createdLobby.getLobbyId();
-                
-                // Navigate directly to the lobby detail screen
-                Bundle args = new Bundle();
-                args.putString("lobbyId", lobbyId);
-                args.putString("lobbyName", lobbyName); // Use the original name we sent
-                navController.navigate(R.id.action_lobbiesFragment_to_lobbyDetailFragment, args);
-            } else if (resource.isError()) {
-                // Show error message
-                Toast.makeText(requireContext(), "Failed to create lobby: " + resource.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
+        binding.progressBar.setVisibility(View.VISIBLE);
+        lobbyViewModel.createLobby(lobbyName, maxPlayers, rounds, roundDuration);
     }
 }

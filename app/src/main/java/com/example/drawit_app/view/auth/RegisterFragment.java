@@ -80,22 +80,24 @@ public class RegisterFragment extends Fragment {
                     showLoading(false);
                     
                     if (result.isAuthenticated() && result.getUser() != null) {
-                        // Registration successful
+                        // Registration successful - go directly to the game
                         Toast.makeText(requireContext(), 
-                                "Account created for " + username + ". Please log in.", 
-                                Toast.LENGTH_LONG).show();
-                        navController.navigate(R.id.action_registerFragment_to_loginFragment);
+                                "Welcome, " + username + "!", 
+                                Toast.LENGTH_SHORT).show();
+                        // Navigate directly to game lobby or main game screen
+                        navController.navigate(R.id.action_registerFragment_to_gameMainActivity);
                     } else if (result.hasError()) {
                         // Show detailed error message
                         Toast.makeText(requireContext(), 
                                 result.getErrorMessage() != null ? result.getErrorMessage() : "Registration failed. Please try again.", 
                                 Toast.LENGTH_LONG).show();
                     } else if (!result.isLoading() && result.isSuccess()) {
-                        // Registration was successful but we may not have a user object yet
+                        // Registration was successful but we may not have a complete user object yet
+                        // We'll still try to go to the game
                         Toast.makeText(requireContext(),
-                                "Account created successfully. Please log in.",
-                                Toast.LENGTH_LONG).show();
-                        navController.navigate(R.id.action_registerFragment_to_loginFragment);
+                                "Welcome to DrawIt!",
+                                Toast.LENGTH_SHORT).show();
+                        navController.navigate(R.id.action_registerFragment_to_gameMainActivity);
                     }
                 });
             }

@@ -40,8 +40,8 @@ dependencies {
     implementation libs.constraintlayout
     implementation libs.navigation.fragment
     implementation libs.navigation.ui
-    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-    
+    implementation libs.swiperefreshlayout
+
     // ViewModel and LiveData
     implementation libs.lifecycle.viewmodel
     implementation libs.lifecycle.livedata
@@ -51,13 +51,14 @@ dependencies {
     implementation libs.room.runtime
     implementation libs.room.common.jvm
     implementation libs.firebase.crashlytics.buildtools
+    implementation libs.play.services.games
     annotationProcessor libs.room.compiler
     testImplementation libs.room.testing
     
     // Retrofit and OkHttp for network calls
     implementation libs.retrofit
     implementation libs.retrofit.converter.moshi
-    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    // Removed Gson converter since we're using Moshi consistently now
     implementation libs.okhttp
     implementation libs.okhttp.logging
     
@@ -66,12 +67,12 @@ dependencies {
     implementation libs.moshi.adapters
     
     // Gson for TypeConverters
-    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation libs.gson
     
-    // Hilt for dependency injection with explicit versions
-    implementation 'com.google.dagger:hilt-android:2.44.2'
-    annotationProcessor 'com.google.dagger:hilt-android-compiler:2.44.2'
-    implementation 'androidx.hilt:hilt-navigation-fragment:1.0.0'
+    // Hilt for dependency injection
+    implementation libs.hilt.android
+    annotationProcessor libs.hilt.compiler
+    implementation libs.hilt.navigation
     
     // Security
     implementation libs.security.crypto

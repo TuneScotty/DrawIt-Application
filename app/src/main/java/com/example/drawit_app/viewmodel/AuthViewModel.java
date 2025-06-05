@@ -102,37 +102,139 @@ public class AuthViewModel extends ViewModel {
     }
     
     /**
-     * Register a new user
+     * Register a new user and automatically log them in
      */
     public void register(String username, String email, String password) {
-        // Validate inputs
-        boolean isValid = validateRegistrationForm(username, password, password, email);
-        if (!isValid) {
+        // Clear previous validation errors first
+        usernameError.setValue(null);
+        passwordError.setValue(null);
+        emailError.setValue(null);
+        
+        // Always proceed with registration attempt if basic requirements are met
+        // We'll do minimal validation here and let the server handle the rest
+        boolean shouldProceed = true;
+        
+        if (username == null || username.trim().isEmpty()) {
+            usernameError.setValue("Username is required");
+            shouldProceed = false;
+        }
+        
+        if (email == null || email.trim().isEmpty()) {
+            emailError.setValue("Email is required");
+            shouldProceed = false;
+        }
+        
+        if (password == null || password.trim().isEmpty()) {
+            passwordError.setValue("Password is required");
+            shouldProceed = false;
+        } else if (password.length() < 6) {
+            passwordError.setValue("Password must be at least 6 characters");
+            shouldProceed = false;
+        }
+        
+        if (!shouldProceed) {
+            android.util.Log.e("AuthViewModel", "Basic form validation failed");
+            // Set error state
+            authState.setValue(new AuthState(false, null, "Please fix the form errors", false));
             return;
         }
         
         // Log the registration attempt for debugging
         android.util.Log.d("AuthViewModel", "Attempting registration for: " + username + ", email: " + email);
         
-        // Clear previous errors
-        authState.setValue(new AuthState(false, null, null));
+        // Clear previous errors and set loading state
+        authState.setValue(new AuthState(false, null, null, true));
         
-        // Call repository to register user
-        // Ensure parameters are in the right order: username, password, email
-        LiveData<Resource<AuthResponse>> result = userRepository.register(username, password, email);
-        authState.addSource(result, resource -> {
-            if (resource.isLoading()) {
-                authState.setValue(new AuthState(false, null, null, true));
-            } else if (resource.isSuccess()) {
-                // Registration successful, user is now logged in
-                authState.setValue(new AuthState(true, resource.getData().getUser(), null));
-            } else if (resource.isError()) {
-                // Registration failed
-                authState.setValue(new AuthState(false, null, resource.getMessage()));
+        try {
+            // Call repository to register user
+            LiveData<Resource<AuthResponse>> result = userRepository.register(username, password, email);
+            
+            if (result == null) {
+                android.util.Log.e("AuthViewModel", "Registration result is null");
+                authState.setValue(new AuthState(false, null, "Registration failed: Internal error", false));
+                return;
             }
             
-            authState.removeSource(result);
-        });
+            // Add a one-time observer to handle the registration response
+            Observer<Resource<AuthResponse>> registrationObserver = new Observer<Resource<AuthResponse>>() {
+                @Override
+                public void onChanged(Resource<AuthResponse> resource) {
+                    if (resource == null) {
+                        android.util.Log.e("AuthViewModel", "Registration resource is null");
+                        authState.setValue(new AuthState(false, null, "Registration failed: Internal error", false));
+                        return;
+                    }
+                    
+                    android.util.Log.d("AuthViewModel", "Registration state changed: " +
+                            "loading=" + resource.isLoading() + 
+                            ", success=" + resource.isSuccess() + 
+                            ", error=" + resource.isError() + 
+                            ", data=" + (resource.getData() != null));
+                    
+                    if (resource.isLoading()) {
+                        // Still loading
+                        authState.setValue(new AuthState(false, null, null, true));
+                        return;
+                    }
+                    
+                    // Remove this observer to prevent memory leaks
+                    try {
+                        result.removeObserver(this);
+                    } catch (Exception e) {
+                        android.util.Log.e("AuthViewModel", "Error removing observer: " + e.getMessage(), e);
+                    }
+                    
+                    if (resource.isSuccess() && resource.getData() != null) {
+                        // Registration successful - now log the user in automatically
+                        AuthResponse authResponse = resource.getData();
+                        User user = authResponse.getUser();
+                        String token = authResponse.getToken();
+                        
+                        if (user != null && token != null && !token.isEmpty()) {
+                            // Save the token and user data
+                            userRepository.saveAuthToken(token);
+                            userRepository.saveUserId(user.getUserId());
+                            
+                            // Create a session
+                            String sessionId = userRepository.getSessionManager().createSession(token);
+                            android.util.Log.d("AuthViewModel", "Session created with ID: " + sessionId);
+                            
+                            // Update the current user
+                            user.setAuthToken(token);
+                            userRepository.updateCurrentUser(user);
+                            
+                            // Update auth state to logged in
+                            android.util.Log.d("AuthViewModel", "Registration and auto-login successful for user: " + user.getUsername());
+                            authState.setValue(new AuthState(true, user, null, false));
+                            
+                            // Refresh user profile to ensure all data is up to date
+                            userRepository.refreshUserProfile();
+                        } else {
+                            String errorMsg = "Registration successful but missing user data or token";
+                            android.util.Log.e("AuthViewModel", errorMsg);
+                            authState.setValue(new AuthState(false, null, errorMsg, false));
+                        }
+                    } else if (resource.isError()) {
+                        // Registration failed
+                        String errorMessage = resource.getMessage() != null ? 
+                                resource.getMessage() : "Registration failed";
+                        android.util.Log.e("AuthViewModel", "Registration error: " + errorMessage);
+                        authState.setValue(new AuthState(false, null, errorMessage, false));
+                    } else {
+                        // Unknown state
+                        android.util.Log.e("AuthViewModel", "Unknown registration state");
+                        authState.setValue(new AuthState(false, null, "Registration failed. Please try again.", false));
+                    }
+                }
+            };
+            
+            // Observe the registration result
+            result.observeForever(registrationObserver);
+            
+        } catch (Exception e) {
+            android.util.Log.e("AuthViewModel", "Error during registration: " + e.getMessage(), e);
+            authState.setValue(new AuthState(false, null, "Registration failed: " + e.getMessage(), false));
+        }
     }
     
     /**
@@ -152,65 +254,125 @@ public class AuthViewModel extends ViewModel {
     
     /**
      * Log in with username and password
+     * Implements secure authentication with session token management
      */
     public void login(String username, String password) {
-        // Validate inputs
-        boolean isValid = validateLoginForm(username, password);
-        if (!isValid) {
+        // Clear previous validation errors first
+        usernameError.setValue(null);
+        passwordError.setValue(null);
+        
+        // Simple validation to ensure basic requirements are met
+        boolean shouldProceed = true;
+        
+        if (username == null || username.trim().isEmpty()) {
+            usernameError.setValue("Username is required");
+            shouldProceed = false;
+        }
+        
+        if (password == null || password.trim().isEmpty()) {
+            passwordError.setValue("Password is required");
+            shouldProceed = false;
+        }
+        
+        if (!shouldProceed) {
+            android.util.Log.e("AuthViewModel", "Basic login form validation failed");
+            // Set error state
+            authState.setValue(new AuthState(false, null, "Please fill in all required fields", false));
             return;
         }
         
-        // Clear previous errors
-        authState.setValue(new AuthState(false, null, null));
+        // Log the login attempt
+        android.util.Log.d("AuthViewModel", "Attempting login for user: " + username);
         
-        // Call repository to login user
-        LiveData<Resource<AuthResponse>> result = userRepository.login(username, password);
+        // Clear previous errors and set loading state
+        authState.setValue(new AuthState(false, null, null, true));
         
-        // Add direct access to raw API response with proper lifecycle management
-        // Use a variable to hold the observer reference so we can remove it later
-        Observer<ApiResponse<AuthResponse>> loginResponseObserver = new Observer<ApiResponse<AuthResponse>>() {
-            @Override
-            public void onChanged(ApiResponse<AuthResponse> response) {
-                android.util.Log.d("AuthViewModel", "Direct login response received in VM");
-                directLoginResponse.setValue(response);
-                // Remove the observer after receiving a response to prevent memory leaks
-                userRepository.getLoginResponse().removeObserver(this);
-            }
-        };
-        
-        // Observe the login response
-        userRepository.getLoginResponse().observeForever(loginResponseObserver);
-        
-        authState.addSource(result, resource -> {
-            android.util.Log.d("AuthViewModel", "Login response received: loading=" + resource.isLoading() + 
-                             ", success=" + resource.isSuccess() + 
-                             ", error=" + resource.isError() + 
-                             ", data=" + (resource.getData() != null));
+        try {
+            // Call repository to login user with secure token handling
+            LiveData<Resource<AuthResponse>> result = userRepository.login(username, password);
             
-            if (resource.isLoading()) {
-                authState.setValue(new AuthState(false, null, null, true));
-            } else if (resource.isSuccess() && resource.getData() != null) {
-                // Login successful with user data
-                User user = resource.getData().getUser();
-                android.util.Log.d("AuthViewModel", "Login successful with user data: " + user.getUsername());
-                authState.setValue(new AuthState(true, user, null));
-            } else if (resource.isSuccess() && resource.getData() == null) {
-                // Success response but no user data - this shouldn't normally happen
-                android.util.Log.d("AuthViewModel", "Login successful but no user data");
-                // Still mark as success but no user data
-                authState.setValue(new AuthState(true, null, null));
-            } else if (resource.isError()) {
-                // Login failed with error
-                android.util.Log.d("AuthViewModel", "Login failed with error: " + resource.getMessage());
-                authState.setValue(new AuthState(false, null, resource.getMessage()));
-            } else {
-                // Unexpected state - neither loading, success, nor error
-                android.util.Log.d("AuthViewModel", "Login ended in unexpected state");
-                authState.setValue(new AuthState(false, null, "An unexpected error occurred"));
+            if (result == null) {
+                android.util.Log.e("AuthViewModel", "Login result is null");
+                authState.setValue(new AuthState(false, null, "Login failed: Internal error", false));
+                return;
             }
             
-            authState.removeSource(result);
-        });
+            // Add a one-time observer to handle the login response
+            Observer<Resource<AuthResponse>> loginObserver = new Observer<Resource<AuthResponse>>() {
+                @Override
+                public void onChanged(Resource<AuthResponse> resource) {
+                    if (resource == null) {
+                        android.util.Log.e("AuthViewModel", "Login resource is null");
+                        authState.setValue(new AuthState(false, null, "Login failed: Internal error", false));
+                        return;
+                    }
+                    
+                    android.util.Log.d("AuthViewModel", "Login state changed: " +
+                            "loading=" + resource.isLoading() + 
+                            ", success=" + resource.isSuccess() + 
+                            ", error=" + resource.isError() + 
+                            ", data=" + (resource.getData() != null));
+                    
+                    if (resource.isLoading()) {
+                        // Still loading
+                        authState.setValue(new AuthState(false, null, null, true));
+                        return;
+                    }
+                    
+                    // Remove this observer to prevent memory leaks
+                    try {
+                        result.removeObserver(this);
+                    } catch (Exception e) {
+                        android.util.Log.e("AuthViewModel", "Error removing observer: " + e.getMessage(), e);
+                    }
+                    
+                    if (resource.isSuccess() && resource.getData() != null) {
+                        // Login successful
+                        AuthResponse authResponse = resource.getData();
+                        User user = authResponse.getUser();
+                        String token = authResponse.getToken();
+                        
+                        if (user != null && token != null && !token.isEmpty()) {
+                            // Verify token and create secure session
+                            String sessionId = userRepository.getSessionManager().createSession(token);
+                            android.util.Log.d("AuthViewModel", "Secure session created with ID: " + sessionId);
+                            
+                            // Update the current user with token
+                            user.setAuthToken(token);
+                            userRepository.updateCurrentUser(user);
+                            
+                            // Update auth state to logged in
+                            android.util.Log.d("AuthViewModel", "Login successful for user: " + user.getUsername());
+                            authState.setValue(new AuthState(true, user, null, false));
+                            
+                            // Refresh user profile to ensure all data is up to date
+                            userRepository.refreshUserProfile();
+                        } else {
+                            String errorMsg = "Login successful but missing user data or token";
+                            android.util.Log.e("AuthViewModel", errorMsg);
+                            authState.setValue(new AuthState(false, null, errorMsg, false));
+                        }
+                    } else if (resource.isError()) {
+                        // Login failed
+                        String errorMessage = resource.getMessage() != null ? 
+                                resource.getMessage() : "Invalid username or password";
+                        android.util.Log.e("AuthViewModel", "Login error: " + errorMessage);
+                        authState.setValue(new AuthState(false, null, errorMessage, false));
+                    } else {
+                        // Unknown state
+                        android.util.Log.e("AuthViewModel", "Unknown login state");
+                        authState.setValue(new AuthState(false, null, "Login failed. Please try again.", false));
+                    }
+                }
+            };
+            
+            // Observe the login result
+            result.observeForever(loginObserver);
+            
+        } catch (Exception e) {
+            android.util.Log.e("AuthViewModel", "Error during login: " + e.getMessage(), e);
+            authState.setValue(new AuthState(false, null, "Login failed: " + e.getMessage(), false));
+        }
     }
     
     /**

@@ -26,6 +26,15 @@ import javax.inject.Singleton;
  */
 @Singleton
 public class DrawingRepository extends BaseRepository {
+
+    // Required by BaseRepository
+    @Override
+    public void onFailure(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<com.example.drawit_app.network.response.LobbyListResponse>> call, Throwable t) {
+        android.util.Log.e("DrawingRepository", "API call failed: " + t.getMessage(), t);
+        // Optionally, update a LiveData or some state to reflect this failure
+        // For example: setError("Failed to perform drawing operation: " + t.getMessage());
+    }
+
     
     private final ApiService apiService;
     private final DrawingDao drawingDao;

@@ -1,5 +1,9 @@
 [versions]
 agp = "8.9.2"
+gson = "2.10.1"
+hiltAndroid = "2.50"
+hiltAndroidCompiler = "2.50"
+hiltNavigationFragment = "1.0.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
@@ -9,6 +13,7 @@ constraintlayout = "2.2.1"
 navigationFragment = "2.6.0"
 navigationUi = "2.6.0"
 # Room Database
+playServicesFontsVersion = "17.0.1"
 room = "2.6.1"
 # Retrofit and OkHttp
 retrofit = "2.9.0"
@@ -22,6 +27,8 @@ lifecycle = "2.7.0"
 hilt = "2.50"
 hilt-compiler = "1.1.0"
 # WebSocket support
+rxandroid = "2.1.1"
+rxjava = "2.2.21"
 scarlet = "0.1.12"
 # Security
 security-crypto = "1.1.0-alpha06"
@@ -29,17 +36,27 @@ security-crypto = "1.1.0-alpha06"
 coroutines = "1.7.3"
 # Testing
 mockito = "5.8.0"
+swiperefreshlayout = "1.1.0"
 truth = "1.1.5"
 # Glide for image loading
 glide = "4.16.0"
 roomCommonJvm = "2.7.1"
 firebaseCrashlyticsBuildtools = "3.0.3"
+roomCompilerProcessingTesting = "2.7.1"
+lifecycleCommonJvm = "2.9.0"
+playServicesGames = "23.2.0"
 
 [libraries]
+gms-play-services-fonts = { module = "com.google.android.gms:play-services-fonts", version.ref = "playServicesFontsVersion" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+hilt-android-compiler-v2442 = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hiltAndroidCompiler" }
+hilt-android-v2442 = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
+hilt-navigation-fragment-v100 = { module = "androidx.hilt:hilt-navigation-fragment", version.ref = "hiltNavigationFragment" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+lifecycle-android = { module = "com.tinder.scarlet:lifecycle-android", version.ref = "scarlet" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 navigation-fragment = { group = "androidx.navigation", name = "navigation-fragment", version.ref = "navigationFragment" }
@@ -72,6 +89,8 @@ hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", v
 hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-fragment", version.ref = "hilt-compiler" }
 
 # WebSocket support
+rxandroid = { module = "io.reactivex.rxjava2:rxandroid", version.ref = "rxandroid" }
+rxjava = { module = "io.reactivex.rxjava2:rxjava", version.ref = "rxjava" }
 scarlet-core = { group = "com.tinder.scarlet", name = "scarlet", version.ref = "scarlet" }
 scarlet-websocket = { group = "com.tinder.scarlet", name = "websocket-okhttp", version.ref = "scarlet" }
 scarlet-moshi = { group = "com.tinder.scarlet", name = "message-adapter-moshi", version.ref = "scarlet" }
@@ -85,6 +104,8 @@ coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutin
 
 # Testing
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
+stream-adapter-rxjava2 = { module = "com.tinder.scarlet:stream-adapter-rxjava2", version.ref = "scarlet" }
+swiperefreshlayout = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version.ref = "swiperefreshlayout" }
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 
 # Glide for image loading
@@ -92,6 +113,9 @@ glide = { group = "com.github.bumptech.glide", name = "glide", version.ref = "gl
 glide-compiler = { group = "com.github.bumptech.glide", name = "compiler", version.ref = "glide" }
 room-common-jvm = { group = "androidx.room", name = "room-common-jvm", version.ref = "roomCommonJvm" }
 firebase-crashlytics-buildtools = { group = "com.google.firebase", name = "firebase-crashlytics-buildtools", version.ref = "firebaseCrashlyticsBuildtools" }
+room-compiler-processing-testing = { group = "androidx.room", name = "room-compiler-processing-testing", version.ref = "roomCompilerProcessingTesting" }
+lifecycle-common-jvm = { group = "androidx.lifecycle", name = "lifecycle-common-jvm", version.ref = "lifecycleCommonJvm" }
+play-services-games = { group = "com.google.android.gms", name = "play-services-games", version.ref = "playServicesGames" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

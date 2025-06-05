@@ -34,17 +34,33 @@ public class Lobby {
     @Json(name = "maxPlayers")
     private int maxPlayers;
     
+    // Server sometimes doesn't return these values in responses despite accepting them in requests
+    // Use multiple possible JSON field names to improve deserialization success
     @Json(name = "numRounds")
-    private int numRounds;
+    private int numRounds = 3; // Default value
     
     @Json(name = "roundDurationSeconds")
-    private int roundDurationSeconds;
+    private int roundDurationSeconds = 60; // Default value
     
-    // Transient fields not saved in database
-    private transient List<User> players;
+    // Track if settings were explicitly set to determine if we should use defaults
+    private transient boolean numRoundsExplicitlySet = false;
+    private transient boolean roundDurationExplicitlySet = false;
+    
+    // Cache for client-side settings that might not be returned by server
+    private transient boolean hasLocalSettingsOverride = false;
+    
+    // Players in the lobby, populated from JSON
+    @Ignore // Tell Room to ignore this field for database operations
+    @Json(name = "players") // For Moshi/Gson to deserialize from JSON
+    private List<User> players;
+    
+    // Host user details from server
+    @Ignore // Tell Room to ignore this field for database operations
+    @Json(name = "hostUser") // For Moshi/Gson to deserialize from JSON
+    private User hostUser;
     
     public Lobby() {
-        this.players = new ArrayList<>();
+        this.players = new ArrayList<>(); // Initialize to prevent null pointer exceptions
         lobbyId = "";
     }
     
@@ -71,20 +87,15 @@ public class Lobby {
     }
     
     public String getLobbyName() {
+        android.util.Log.d("Lobby", "DEBUG: getLobbyName() called, returning: " + lobbyName);
         return lobbyName;
     }
     
     public void setLobbyName(String lobbyName) {
+        android.util.Log.d("Lobby", "DEBUG: setLobbyName() called with: " + lobbyName + ", caller: " + new Exception().getStackTrace()[1]);
         this.lobbyName = lobbyName;
     }
-    
-    /**
-     * Convenience method for getting lobby name (used by adapter)
-     */
-    public String getName() {
-        return lobbyName;
-    }
-    
+
     /**
      * Convenience method for getting lobby ID (used by fragments)
      */
@@ -104,45 +115,50 @@ public class Lobby {
      * Get the host user object
      * @return User object for the host, or null if not found
      */
+    public List<User> getPlayers() {
+        if (this.players == null) { // Defensive null check
+            this.players = new ArrayList<>();
+        }
+        return this.players;
+    }
+
+    public void setPlayers(List<User> players) {
+        this.players = players;
+    }
+
     public User getHost() {
-        // Check if hostId is valid
+        // First priority: use the hostUser object if available
+        if (hostUser != null && hostUser.getUserId() != null) {
+            return hostUser;
+        }
+        
+        // Second priority: if no hostUser but we have hostId
         if (hostId == null || hostId.isEmpty()) {
             return null;
         }
         
-        // Try to find the host in the players list first
-        if (players != null && !players.isEmpty()) {
-            // Find the host in the players list by ID
-            for (User user : players) {
-                if (user != null && user.getUserId() != null && 
-                    user.getUserId().equals(hostId) && 
-                    user.getUsername() != null && !user.getUsername().isEmpty()) {
-                    // Found host with complete info including username
-                    return user;
+        // Try to find the host in the players list
+        if (players != null) {
+            for (User player : players) {
+                if (player != null && hostId.equals(player.getUserId())) {
+                    return player;
                 }
             }
         }
         
-        // If we couldn't find the host with complete info in the players list,
-        // create a user with a placeholder username based on ID
-        User hostUser = new User();
-        hostUser.setUserId(hostId);
-        
-        // Set a username that clearly indicates this is a host
-        // Instead of a cryptic "Player-tb72", use a clearer name
-        try {
-            if (hostId != null && !hostId.isEmpty()) {
-                hostUser.setUsername("Host #" + hostId.substring(0, Math.min(6, hostId.length())));
-            } else {
-                hostUser.setUsername("Unknown Host");
-            }
-        } catch (Exception e) {
-            // Catch any string manipulation exceptions
-            android.util.Log.e("Lobby", "Error setting host username: " + e.getMessage());
-            hostUser.setUsername("Host");
-        }
-        
+        // If host not found in players list or hostUser field
+        // create a basic User object with only the ID set
+        User basicHostUser = new User();
+        basicHostUser.setUserId(hostId);
+        return basicHostUser;
+    }
+    
+    public User getHostUser() {
         return hostUser;
+    }
+    
+    public void setHostUser(User hostUser) {
+        this.hostUser = hostUser;
     }
     
     /**
@@ -181,7 +197,11 @@ public class Lobby {
     }
     
     public void setNumRounds(int numRounds) {
-        this.numRounds = numRounds;
+        if (numRounds > 0) {
+            this.numRounds = numRounds;
+            this.numRoundsExplicitlySet = true;
+            this.hasLocalSettingsOverride = true;
+        }
     }
     
     public int getRoundDurationSeconds() {
@@ -189,15 +209,11 @@ public class Lobby {
     }
     
     public void setRoundDurationSeconds(int roundDurationSeconds) {
-        this.roundDurationSeconds = roundDurationSeconds;
-    }
-    
-    public List<User> getPlayers() {
-        return players;
-    }
-    
-    public void setPlayers(List<User> players) {
-        this.players = players;
+        if (roundDurationSeconds > 0) {
+            this.roundDurationSeconds = roundDurationSeconds;
+            this.roundDurationExplicitlySet = true;
+            this.hasLocalSettingsOverride = true;
+        }
     }
     
     public void addPlayer(User player) {
@@ -221,26 +237,5 @@ public class Lobby {
             }
         }
         return false;
-    }
-    
-    /**
-     * Assigns a new host if the current host leaves
-     * @param excludeUserId User ID to exclude (usually the leaving host)
-     * @return true if a new host was assigned, false if the lobby should be disbanded
-     */
-    public boolean assignNewHostIfNeeded(String excludeUserId) {
-        if (!hostId.equals(excludeUserId)) {
-            return true; // Current host hasn't left
-        }
-        
-        // If there are other players, assign the first one as the new host
-        for (User user : players) {
-            if (!user.getUserId().equals(excludeUserId)) {
-                hostId = user.getUserId();
-                return true;
-            }
-        }
-        
-        return false; // No other players, should disband lobby
     }
 }

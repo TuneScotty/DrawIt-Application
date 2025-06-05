@@ -90,7 +90,7 @@ Thumbs.db
 .project
 .settings/
 .idea/sonarlint/
-.vscodeCounter/
+.VSCodeCounter/
 
 # Fastlane
 fastlane/report.xml

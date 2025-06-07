@@ -29,13 +29,7 @@ public class LobbyAdapter extends RecyclerView.Adapter<LobbyAdapter.LobbyViewHol
     private UserRepository userRepository;
     private LifecycleOwner lifecycleOwner;
 
-    public LobbyAdapter(List<Lobby> lobbies, LobbyClickListener listener) {
-        this.lobbies = lobbies;
-        this.listener = listener;
-    }
-    
-    public LobbyAdapter(List<Lobby> lobbies, LobbyClickListener listener, 
-                       UserRepository userRepository, LifecycleOwner lifecycleOwner) {
+    public LobbyAdapter(List<Lobby> lobbies, LobbyClickListener listener, UserRepository userRepository, LifecycleOwner lifecycleOwner) {
         this.lobbies = lobbies;
         this.listener = listener;
         this.userRepository = userRepository;
@@ -237,19 +231,44 @@ public class LobbyAdapter extends RecyclerView.Adapter<LobbyAdapter.LobbyViewHol
                 // Show lock icon if lobby is locked
                 binding.iconLock.setVisibility(lobby.isLocked() ? View.VISIBLE : View.GONE);
                 
-                // Set click listener on join button
-                binding.btnJoinLobby.setOnClickListener(v -> {
-                    if (listener != null) {
-                        listener.onLobbyClick(lobby);
+                // Check if lobby is in active game
+                if (lobby.isInGame()) {
+                    // Visual indication that lobby is in an active game
+                    binding.getRoot().setAlpha(0.5f); // Gray out the item
+                    binding.btnJoinLobby.setEnabled(false); // Disable join button
+                    binding.btnJoinLobby.setText("In Game"); // Change button text
+                    
+                    // Add game icon or indicator if available
+                    if (binding.iconInGame != null) {
+                        binding.iconInGame.setVisibility(View.VISIBLE);
                     }
-                });
-                
-                // Also set click listener for the entire item
-                binding.getRoot().setOnClickListener(v -> {
-                    if (listener != null) {
-                        listener.onLobbyClick(lobby);
+                    
+                    android.util.Log.d("LobbyAdapter", "Lobby " + lobby.getLobbyId() + " is in active game - disabled joining");
+                } else {
+                    // Normal lobby that can be joined
+                    binding.getRoot().setAlpha(1.0f); // Full opacity
+                    binding.btnJoinLobby.setEnabled(true); // Enable join button
+                    binding.btnJoinLobby.setText("Join"); // Reset button text
+                    
+                    // Hide game icon if available
+                    if (binding.iconInGame != null) {
+                        binding.iconInGame.setVisibility(View.GONE);
                     }
-                });
+                    
+                    // Set click listener on join button
+                    binding.btnJoinLobby.setOnClickListener(v -> {
+                        if (listener != null) {
+                            listener.onLobbyClick(lobby);
+                        }
+                    });
+                    
+                    // Also set click listener for the entire item
+                    binding.getRoot().setOnClickListener(v -> {
+                        if (listener != null) {
+                            listener.onLobbyClick(lobby);
+                        }
+                    });
+                }
                 
                 // Lobby data fully bound
             } catch (Exception e) {

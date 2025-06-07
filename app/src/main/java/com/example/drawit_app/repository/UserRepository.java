@@ -12,13 +12,13 @@ import androidx.security.crypto.MasterKey;
 import com.example.drawit_app.data.DrawItDatabase;
 import com.example.drawit_app.data.UserDao;
 import com.example.drawit_app.model.User;
-import com.example.drawit_app.network.ApiService;
-import com.example.drawit_app.network.request.AuthRequest;
-import com.example.drawit_app.network.request.RegisterRequest;
-import com.example.drawit_app.network.request.UpdateProfileRequest;
-import com.example.drawit_app.network.response.ApiResponse;
-import com.example.drawit_app.network.response.AuthResponse;
-import com.example.drawit_app.network.response.LobbyListResponse;
+import com.example.drawit_app.api.ApiService;
+import com.example.drawit_app.api.request.AuthRequest;
+import com.example.drawit_app.api.request.RegisterRequest;
+import com.example.drawit_app.api.request.UpdateProfileRequest;
+import com.example.drawit_app.api.response.ApiResponse;
+import com.example.drawit_app.api.response.AuthResponse;
+import com.example.drawit_app.api.response.LobbyListResponse;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -474,8 +474,8 @@ public class UserRepository extends BaseRepository {
         }
         
         // Create a request with the old token
-        com.example.drawit_app.network.request.RefreshTokenRequest request = 
-                new com.example.drawit_app.network.request.RefreshTokenRequest(oldToken);
+        com.example.drawit_app.api.request.RefreshTokenRequest request =
+                new com.example.drawit_app.api.request.RefreshTokenRequest(oldToken);
         
         apiService.refreshToken(request).enqueue(new Callback<ApiResponse<AuthResponse>>() {
             @Override
@@ -746,7 +746,7 @@ public class UserRepository extends BaseRepository {
     /**
      * Get the user ID for the current user
      */
-    private String getUserId() {
+    public String getUserId() {
         try {
             MasterKey masterKey = new MasterKey.Builder(context)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)

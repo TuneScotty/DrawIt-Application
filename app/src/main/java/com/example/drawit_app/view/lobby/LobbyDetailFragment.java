@@ -3,6 +3,8 @@ package com.example.drawit_app.view.lobby;
 import static android.content.ContentValues.TAG;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
 import androidx.appcompat.app.AppCompatActivity;
@@ -16,6 +18,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
+import androidx.navigation.NavDestination;
 import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -23,10 +26,10 @@ import com.example.drawit_app.R;
 import com.example.drawit_app.databinding.FragmentLobbyDetailBinding;
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
-import com.example.drawit_app.network.WebSocketService;
-import com.example.drawit_app.network.message.GameStateMessage;
-import com.example.drawit_app.network.message.LobbiesUpdateMessage;
-import com.example.drawit_app.network.message.LobbyStateMessage;
+import com.example.drawit_app.api.WebSocketService;
+import com.example.drawit_app.api.message.GameStateMessage;
+import com.example.drawit_app.api.message.LobbiesUpdateMessage;
+import com.example.drawit_app.api.message.LobbyStateMessage;
 import com.example.drawit_app.repository.BaseRepository;
 import com.example.drawit_app.repository.UserRepository;
 import com.example.drawit_app.view.adapter.PlayerAdapter;
@@ -50,6 +53,7 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
     private PlayerAdapter playerAdapter;
     private String lobbyId;
     private boolean isHost = false;
+    private boolean isGameTransitionInProgress = false;
     
     @Inject
     UserRepository userRepository;
@@ -119,6 +123,12 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
         // Start game button click listener
         binding.btnStartGame.setOnClickListener(v -> {
             if (isHost) {
+                // Show loading indicator
+                binding.progressBar.setVisibility(View.VISIBLE);
+                binding.btnStartGame.setEnabled(false);
+                binding.btnStartGame.setText(R.string.starting_game);
+                
+                // Call startGame - observe results in observeViewModel()
                 lobbyViewModel.startGame(lobbyId);
             } else {
                 Toast.makeText(requireContext(), R.string.error_not_host, Toast.LENGTH_SHORT).show();
@@ -138,7 +148,6 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
      * This method ensures the player is properly removed from the lobby
      * and if they were the last player, the lobby is deleted from the database
      */
-
     private void leaveLobbyAndCleanup() {
         // Get current lobby data to check player count
         Lobby currentLobby = lobbyViewModel.getCurrentLobby().getValue();
@@ -166,8 +175,10 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             // If this is the last player, we'll request server to delete the lobby
             final boolean shouldDeleteLobby = playerCount == 0; // Host leaving empty lobby
             
-            // Show loading indicator
-            binding.progressBar.setVisibility(View.VISIBLE);
+            // Show loading indicator - check if binding is not null first
+            if (binding != null) {
+                binding.progressBar.setVisibility(View.VISIBLE);
+            }
             
             // Call ViewModel method directly - the navigation will be handled by the event observer
             lobbyViewModel.leaveLobby();
@@ -227,7 +238,56 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
         // Show loading indicator while waiting for data
         binding.progressBar.setVisibility(View.VISIBLE);
         
-        // Observe current lobby
+        // Critical - observe game state events from ViewModel (for both host and non-host players)
+        lobbyViewModel.getLobbyEvent().observe(getViewLifecycleOwner(), event -> {
+            if (event == null) return;
+            
+            Log.d("LobbyDetailFragment", "Received lobby event: " + event.type);
+            
+            switch (event.type) {
+                case GAME_STARTED:
+                    // Prevent duplicate navigation if we're already transitioning
+                    if (!isGameTransitionInProgress) {
+                        String gameId = event.gameId;
+                        Log.i("LobbyDetailFragment", "🚨 Game started event received from ViewModel with gameId: " + gameId);
+                        isGameTransitionInProgress = true;
+                        navigateToGame(gameId);
+                        // Reset the event to prevent duplicate navigation attempts
+                        lobbyViewModel.resetEvent();
+                    }
+                    break;
+                    
+                case LOBBY_LEFT:
+                    // Handle leaving lobby
+                    if (navController != null && isAdded()) {
+                        navController.navigateUp();
+                    }
+                    break;
+            }
+        });
+        
+        // Observe error messages
+        lobbyViewModel.getErrorMessage().observe(getViewLifecycleOwner(), errorMsg -> {
+            if (errorMsg != null && !errorMsg.isEmpty()) {
+                Log.e("LobbyDetailFragment", "⚠️ Error received: " + errorMsg);
+                
+                // Hide progress indicator
+                binding.progressBar.setVisibility(View.GONE);
+                
+                // Re-enable start game button if applicable
+                if (isHost) {
+                    binding.btnStartGame.setEnabled(true);
+                    binding.btnStartGame.setText(R.string.start_game);
+                }
+                
+                // Show error toast
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+        
+        // Observe current lobby state
         lobbyViewModel.getCurrentLobby().observe(getViewLifecycleOwner(), lobby -> {
             if (lobby != null) {
                 // Immediately refresh lobby details from server to ensure we have the latest data
@@ -454,28 +514,39 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
             
             switch (lobbyEvent.type) {
                 case GAME_STARTED:
-                    if (lobbyEvent.gameId != null && !lobbyEvent.gameId.isEmpty()) {
-                        Log.d(TAG, "LobbyDetailFragment: Navigating to game screen with gameId: " + lobbyEvent.gameId);
-                        // Navigate to game screen
-                        try {
-                            Bundle args = new Bundle();
-                            args.putString("gameId", lobbyEvent.gameId);
-                            navController.navigate(R.id.action_lobbyDetailFragment_to_gameFragment, args);
-                            Log.d(TAG, "LobbyDetailFragment: Navigation command executed");
-                        } catch (Exception e) {
-                            Log.e(TAG, "LobbyDetailFragment: Navigation failed", e);
-                            Toast.makeText(requireContext(), "Failed to navigate to game: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    // Only process GAME_STARTED fallback navigation for host players
+                    if (lobbyViewModel.isHost()) { // Only host should trigger fallback navigation
+                        if (lobbyEvent.gameId != null && !lobbyEvent.gameId.isEmpty()) {
+                            Log.d(TAG, "LobbyDetailFragment: Navigating to game screen with gameId: " + lobbyEvent.gameId);
+                            // Navigate to game screen
+                            try {
+                                // Check if we're already in GameFragment to avoid navigation error
+                                NavDestination currentDestination = navController.getCurrentDestination();
+                                if (currentDestination != null && currentDestination.getId() == R.id.gameFragment) {
+                                    Log.d(TAG, "LobbyDetailFragment: Already in game fragment, skipping navigation");
+                                } else {
+                                    Bundle args = new Bundle();
+                                    args.putString("gameId", lobbyEvent.gameId);
+                                    navController.navigate(R.id.action_lobbyDetailFragment_to_gameFragment, args);
+                                    Log.d(TAG, "LobbyDetailFragment: Navigation command executed");
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "LobbyDetailFragment: Navigation failed", e);
+                                Toast.makeText(requireContext(), "Failed to navigate to game: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                            }
+                            
+                            // Reset the event to prevent re-triggering - moved to after navigation
+                            lobbyViewModel.resetEvent();
+                        } else {
+                            Log.e(TAG, "LobbyDetailFragment: Game started but gameId is null or empty");
                         }
-                        
-                        // Reset the event to prevent re-triggering - moved to after navigation
-                        lobbyViewModel.resetEvent();
                     } else {
-                        Log.e(TAG, "LobbyDetailFragment: Game started but gameId is null or empty");
+                        Log.d("LobbyDetailFragment", "Non-host received GAME_STARTED event; ignoring fallback navigation");
                     }
                     break;
                     
                 case LOBBY_LEFT:
-                    Log.d(TAG, "LobbyDetailFragment: Leaving lobby");
+                    Log.d("LobbyDetailFragment", "Left lobby event received");
                     // User has left the lobby, navigate back
                     navController.navigateUp();
                     lobbyViewModel.resetEvent();
@@ -568,7 +639,9 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                 // Debug log all players
                 if (updatedPlayers != null) {
                     for (User player : updatedPlayers) {
-                        Log.d("LobbyDetailFragment", "Player in update: " + player.getUserId() + " - " + player.getUsername());
+                        Log.d("LobbyDetailFragment", "Player in update: " + 
+                            (player.getUsername() != null ? player.getUsername() : "null") + 
+                            ", ID: " + player.getUserId());
                     }
                 }
                 
@@ -832,82 +905,144 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
     
     /**
      * WebSocket callback for game state changes
-     * Handles transition to the game screen when game starts
+     * With the MVVM architecture improvements, this method is now minimal
+     * as all game start logic is handled through the ViewModel and LiveData
      */
     @Override
     public void onGameStateChanged(GameStateMessage message) {
-        // Super detailed logging to trace game state flow
-        Log.w("LobbyDetailFragment", "onGameStateChanged CALLED with message: " + (message != null ? "non-null" : "NULL"));
+        // Log message reception but don't handle navigation here
+        // Navigation will be triggered by the ViewModel's LiveData
+        Log.d("LobbyDetailFragment", "Received game state WebSocket message: " + 
+              (message != null ? (message.getGamePayload() != null ? 
+              message.getGamePayload().getEvent() : "null payload") : "null"));
         
-        if (message != null) {
-            Log.d("LobbyDetailFragment", "GamePayload: " + (message.getGamePayload() != null ? "non-null" : "NULL"));
-            
-            if (message.getGamePayload() != null) {
-                Log.d("LobbyDetailFragment", "Game: " + (message.getGamePayload().getGame() != null ? "non-null" : "NULL"));
-                Log.d("LobbyDetailFragment", "Event: " + message.getGamePayload().getEvent());
-            }
+        // No direct navigation here - that's now handled by observing the ViewModel
+    }
+
+    private void navigateToGame(String gameId) {
+        if (gameId == null || gameId.isEmpty()) {
+            Log.e("LobbyDetailFragment", "Cannot navigate to game: invalid game ID");
+            return;
         }
         
-        if (message != null && message.getGamePayload() != null && message.getGamePayload().getGame() != null) {
-            String gameId = message.getGamePayload().getGame().getGameId();
-            String event = message.getGamePayload().getEvent();
-            
-            Log.i("LobbyDetailFragment", "⭐ GAME STATE MESSAGE - GameID: " + gameId + ", Event: " + 
-                  (event != null ? event : "null") + ", Current thread: " + Thread.currentThread().getName());
-            
-            // Handle different game events
-            if (event != null && event.equals("started")) {
-                Log.i("LobbyDetailFragment", "GAME STARTED event received via WebSocket, gameId: " + gameId);
-                
-                // Check if fragment is still attached
-                boolean isFragmentAdded = isAdded();
-                boolean hasActivity = getActivity() != null;
-                Log.d("LobbyDetailFragment", "Fragment state - isAdded: " + isFragmentAdded + 
-                      ", hasActivity: " + hasActivity + ", navController: " + (navController != null ? "non-null" : "NULL"));
-                
-                if (isAdded() && getActivity() != null) {
-                    getActivity().runOnUiThread(() -> {
-                        // Navigate to game screen
-                        if (isAdded() && !gameId.isEmpty()) {
-                            Log.i("LobbyDetailFragment", "NAVIGATING to game screen with gameId: " + gameId);
+        Log.i("LobbyDetailFragment", "🚀 Preparing navigation to game with ID: " + gameId);
+        
+        boolean isFragmentAdded = isAdded();
+        boolean hasActivity = getActivity() != null;
+        Log.d("LobbyDetailFragment", "Fragment state - isAdded: " + isFragmentAdded + 
+              ", hasActivity: " + hasActivity + ", navController: " + (navController != null ? "non-null" : "NULL"));
+        
+        // Always use the main thread for UI operations
+        Handler mainHandler = new Handler(Looper.getMainLooper());
+        mainHandler.post(() -> {
+            // Check if we're still attached to avoid crashes
+            if (isAdded() && getActivity() != null && navController != null) {
+                try {
+                    // Before navigating, update UI to provide feedback
+                    if (binding != null) {
+                        binding.progressBar.setVisibility(View.VISIBLE);
+                        Toast.makeText(requireContext(), "Game is starting...", Toast.LENGTH_SHORT).show();
+                    }
+                    
+                    // Pre-bundle the gameId
+                    Bundle args = new Bundle();
+                    args.putString("gameId", gameId);
+
+                    // Use post-delayed to ensure UI has time to update before navigation
+                    new Handler().postDelayed(() -> {
+                        // Final safety check before navigating
+                        if (isAdded() && navController != null) {
                             try {
-                                Bundle args = new Bundle();
-                                args.putString("gameId", gameId);
                                 navController.navigate(R.id.action_lobbyDetailFragment_to_gameFragment, args);
-                                Log.i("LobbyDetailFragment", "Navigation completed successfully");
+                                Log.i("LobbyDetailFragment", "✅ Navigation completed successfully");
                             } catch (Exception e) {
-                                Log.e("LobbyDetailFragment", "Navigation FAILED: " + e.getMessage(), e);
+                                isGameTransitionInProgress = false; // Reset flag on failure
+                                Log.e("LobbyDetailFragment", "❌ Navigation exception: " + e.getMessage(), e);
+                                showErrorToast("Failed to navigate to game: " + e.getMessage());
                             }
-                        } else {
-                            Log.e("LobbyDetailFragment", "Cannot navigate - isAdded: " + isAdded() +
-                                    ", gameId valid: " + !gameId.isEmpty());
                         }
-                    });
+                    }, 100);
+                } catch (Exception e) {
+                    isGameTransitionInProgress = false; // Reset flag on failure
+                    Log.e("LobbyDetailFragment", "❌ Navigation preparation failed: " + e.getMessage(), e);
+                    showErrorToast("Error preparing game navigation: " + e.getMessage());
                 }
+            } else {
+                isGameTransitionInProgress = false; // Reset flag on failure
+                Log.e("LobbyDetailFragment", "Cannot navigate - isAdded: " + isAdded() +
+                        ", hasActivity: " + (getActivity() != null) +
+                        ", navController: " + (navController != null));
+            }
+        });
+    }
+    
+    /**
+     * Helper method to show error toast safely on the UI thread
+     */
+    private void showErrorToast(String message) {
+        if (isAdded() && getContext() != null) {
+            Handler mainHandler = new Handler(Looper.getMainLooper());
+            mainHandler.post(() -> {
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+    }
+    
+    @Override
+    public void onResume() {
+        super.onResume();
+        Log.i("LobbyDetailFragment", "💡 onResume");
+        
+        // Always ensure WebSocket callbacks are registered when fragment is resumed
+        // This ensures proper reception of game_state and lobby_state events after app switches
+        // or when returning to the foreground
+        if (lobbyViewModel != null && lobbyId != null) {
+            Log.i("LobbyDetailFragment", "🔄 onResume: Re-registering WebSocket callbacks for lobby " + lobbyId);
+            lobbyViewModel.setLobbyUpdateCallback(this);
+            
+            // Reset the transition flag when returning to the lobby
+            isGameTransitionInProgress = false;
+            
+            // Refresh lobby details to ensure we have up-to-date information
+            lobbyViewModel.getLobbyDetails(lobbyId);
+            
+            // Check if a game transition should already be in progress (handles app switching/backgrounding during game start)
+            String currentGameId = lobbyViewModel.getCurrentGameId();
+            if (currentGameId != null && !currentGameId.isEmpty() && !isGameTransitionInProgress) {
+                Log.i("LobbyDetailFragment", "🔄 Resume with pending game transition: " + currentGameId);
+                isGameTransitionInProgress = true;
+                navigateToGame(currentGameId);
             }
         }
     }
     
     @Override
     public void onDestroyView() {
-        super.onDestroyView();
-        // Remove WebSocket callback
-        lobbyViewModel.setLobbyUpdateCallback(null);
+        Log.i("LobbyDetailFragment", "🧹 onDestroyView: Cleanup and removing WebSocket callbacks");
         
-        // Ensure we properly clean up the lobby if user leaves by navigating away
-        // Only call this if the fragment is being destroyed but not when navigating to game
-        LobbyViewModel.LobbyEvent event = lobbyViewModel.getLobbyEvent().getValue();
-        boolean isGameStarted = event != null && event.type == LobbyViewModel.LobbyEventType.GAME_STARTED;
+        // Cleanup resources
+        if (lobbyViewModel != null) {
+            // Remove WebSocket listener to prevent memory leaks
+            lobbyViewModel.removeLobbyUpdateCallback(this);
+        }
         
         // Add log to see if fragment is being destroyed during game navigation
-        Log.d("LobbyDetailFragment", "onDestroyView called, isGameStarted: " + isGameStarted);
+        Log.d("LobbyDetailFragment", "onDestroyView called, isGameTransitionInProgress: " + isGameTransitionInProgress);
         
-        if (!isGameStarted) {
+        // CRITICAL FIX: Only leave the lobby if we're NOT transitioning to a game
+        // This prevents non-host players from being kicked during game start
+        if (!isGameTransitionInProgress) {
+            // Ensure we properly clean up the lobby if user leaves by navigating away
+            // but not when navigating to game
+            Log.d("LobbyDetailFragment", "Not in game transition, leaving lobby and cleaning up");
             leaveLobbyAndCleanup();
+        } else {
+            Log.d("LobbyDetailFragment", "In game transition, skipping lobby cleanup to prevent disconnection");
         }
         
         binding = null;
+        super.onDestroyView();
     }
-    
-
 }

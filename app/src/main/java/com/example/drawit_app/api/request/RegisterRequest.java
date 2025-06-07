@@ -1,6 +1,4 @@
-package com.example.drawit_app.network.request;
-
-import com.google.gson.annotations.SerializedName;
+package com.example.drawit_app.api.request;
 
 /**
  * Request model for user registration

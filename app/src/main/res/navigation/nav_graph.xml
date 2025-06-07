@@ -71,8 +71,7 @@
             app:argType="string" />
         <action
             android:id="@+id/action_lobbyDetailFragment_to_gameFragment"
-            app:destination="@id/gameFragment"
-            app:popUpTo="@id/lobbiesFragment" />
+            app:destination="@id/gameFragment" />
     </fragment>
 
     <fragment

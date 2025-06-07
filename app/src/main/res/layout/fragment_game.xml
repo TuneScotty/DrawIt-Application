@@ -145,6 +145,32 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/tvWord"
                 tools:text="@string/your_turn_to_draw" />
+                
+            <TextView
+                android:id="@+id/tvCurrentStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+                android:textStyle="bold"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvInstruction"
+                tools:text="Your turn to draw!" />
+                
+            <TextView
+                android:id="@+id/tvWordToGuess"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+                android:textColor="@color/accent"
+                android:textStyle="bold"
+                android:visibility="gone"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvCurrentStatus"
+                tools:text="Guess the word!" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -158,20 +184,95 @@
             app:layout_constraintTop_toBottomOf="@id/game_info_panel" />
 
         <LinearLayout
-            android:id="@+id/colorPalette"
+            android:id="@+id/drawingControlsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/background_light"
-            android:orientation="horizontal"
-            android:padding="8dp"
+            android:orientation="vertical"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             tools:visibility="visible">
+            
+            <SeekBar
+                android:id="@+id/brushSizeSlider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="8dp"
+                android:max="50"
+                android:progress="10" />
+                
+            <!-- Brush Type Selection -->
+            <HorizontalScrollView
+                android:id="@+id/brushTypeScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:layout_marginBottom="4dp"
+                android:scrollbars="none">
+                
+                <LinearLayout
+                    android:id="@+id/brushTypeContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBrushNormal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Normal"
+                        android:checked="true"
+                        app:chipIcon="@drawable/ic_brush"
+                        style="@style/Widget.MaterialComponents.Chip.Choice" />
+                        
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBrushCalligraphy"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Calligraphy"
+                        app:chipIcon="@drawable/ic_brush"
+                        style="@style/Widget.MaterialComponents.Chip.Choice" />
+                        
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBrushAirbrush"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Airbrush"
+                        app:chipIcon="@drawable/ic_brush"
+                        style="@style/Widget.MaterialComponents.Chip.Choice" />
+                        
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBrushMarker"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Marker"
+                        app:chipIcon="@drawable/ic_brush"
+                        style="@style/Widget.MaterialComponents.Chip.Choice" />
+                </LinearLayout>
+            </HorizontalScrollView>
+            
+            <!-- Pressure Sensitivity Toggle -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchPressureSensitivity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:layout_marginBottom="4dp"
+                android:text="Pressure Sensitivity"
+                android:textSize="14sp" />
+                
+            <LinearLayout
+                android:id="@+id/colorPalette"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/background_light"
+                android:orientation="horizontal"
+                android:padding="8dp">
 
-            <!-- Color palette buttons will be added programmatically -->
+                <!-- Color palette buttons will be added programmatically -->
 
+            </LinearLayout>
         </LinearLayout>
 
         <Button
@@ -196,6 +297,18 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toBottomOf="@id/game_info_panel"
             tools:listitem="@layout/item_player_score" />
+            
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewPlayers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@color/background_light"
+            android:padding="4dp"
+            android:elevation="4dp"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/game_info_panel"
+            tools:listitem="@layout/item_player" />
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/chatContainer"

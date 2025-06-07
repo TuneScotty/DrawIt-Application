@@ -1,4 +1,4 @@
-package com.example.drawit_app.network.request;
+package com.example.drawit_app.api.request;
 
 /**
  * Request model for rating a drawing

@@ -44,19 +44,12 @@ public class PlayerScoreAdapter extends RecyclerView.Adapter<PlayerScoreAdapter.
     }
 
     public void updateScores(List<PlayerScore> newScores) {
-        // Sort scores by score value (descending)
-        Collections.sort(newScores, new Comparator<PlayerScore>() {
-            @Override
-            public int compare(PlayerScore p1, PlayerScore p2) {
-                return Integer.compare(p2.getScore(), p1.getScore());
-            }
-        });
-        
+        newScores.sort((p1, p2) -> Integer.compare(p2.getScore(), p1.getScore()));
         this.playerScores = newScores;
         notifyDataSetChanged();
     }
 
-    public class ScoreViewHolder extends RecyclerView.ViewHolder {
+    public static class ScoreViewHolder extends RecyclerView.ViewHolder {
         private final ItemPlayerScoreBinding binding;
 
         public ScoreViewHolder(ItemPlayerScoreBinding binding) {

@@ -15,21 +15,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <TextView
-        android:id="@+id/tv_spectator_mode"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@color/background_translucent"
-        android:padding="8dp"
-        android:text="@string/spectator_mode"
-        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-        android:textColor="@color/white"
-        android:visibility="gone"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:visibility="visible" />
-
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/tool_palette"
         android:layout_width="match_parent"

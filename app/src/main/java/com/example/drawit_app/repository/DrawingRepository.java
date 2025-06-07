@@ -12,8 +12,8 @@ import android.content.Context;
 import com.example.drawit_app.data.DrawItDatabase;
 import com.example.drawit_app.data.DrawingDao;
 import com.example.drawit_app.model.Drawing;
-import com.example.drawit_app.network.ApiService;
-import com.example.drawit_app.network.request.RateDrawingRequest;
+import com.example.drawit_app.api.ApiService;
+import com.example.drawit_app.api.request.RateDrawingRequest;
 
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +29,7 @@ public class DrawingRepository extends BaseRepository {
 
     // Required by BaseRepository
     @Override
-    public void onFailure(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<com.example.drawit_app.network.response.LobbyListResponse>> call, Throwable t) {
+    public void onFailure(retrofit2.Call<com.example.drawit_app.api.response.ApiResponse<com.example.drawit_app.api.response.LobbyListResponse>> call, Throwable t) {
         android.util.Log.e("DrawingRepository", "API call failed: " + t.getMessage(), t);
     }
 

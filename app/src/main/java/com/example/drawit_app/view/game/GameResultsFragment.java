@@ -37,7 +37,6 @@ import dagger.hilt.android.AndroidEntryPoint;
 public class GameResultsFragment extends Fragment {
 
     private FragmentGameResultsBinding binding;
-    private DrawingViewModel drawingViewModel;
     private NavController navController;
     private String gameId;
     private GameResultsAdapter resultsAdapter;
@@ -54,7 +53,7 @@ public class GameResultsFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
         
         navController = Navigation.findNavController(view);
-        drawingViewModel = new ViewModelProvider(requireActivity()).get(DrawingViewModel.class);
+        DrawingViewModel drawingViewModel = new ViewModelProvider(requireActivity()).get(DrawingViewModel.class);
         
         // Get game ID from arguments
         if (getArguments() != null) {

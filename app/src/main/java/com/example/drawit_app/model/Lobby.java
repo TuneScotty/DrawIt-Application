@@ -1,11 +1,13 @@
 package com.example.drawit_app.model;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
-import androidx.room.Relation;
 
+import android.util.Log;
 import com.squareup.moshi.Json;
 
 import java.util.ArrayList;
@@ -28,6 +30,8 @@ public class Lobby {
     @Json(name = "hostId")
     private String hostId;
     
+    // isLocked now indicates if lobby has launched a game or is at full capacity
+    // No longer used for password protection
     @Json(name = "isLocked")
     private boolean isLocked;
     
@@ -46,6 +50,11 @@ public class Lobby {
     private transient boolean numRoundsExplicitlySet = false;
     private transient boolean roundDurationExplicitlySet = false;
     private transient boolean hasLocalSettingsOverride = false;
+    
+    // Flag to track if this lobby is currently in an active game session
+    // When true, lobby should be hidden from available lobbies list
+    @Json(name = "inGame")
+    private boolean inGame = false;
 
     @Ignore
     @Json(name = "players")
@@ -83,13 +92,20 @@ public class Lobby {
         this.lobbyId = lobbyId;
     }
     
+    // Track if we've logged lobby name getter/setter operations to reduce log spam
+    private static boolean loggedNameOperations = false;
+    
     public String getLobbyName() {
-        android.util.Log.d("Lobby", "DEBUG: getLobbyName() called, returning: " + lobbyName);
         return lobbyName;
     }
     
     public void setLobbyName(String lobbyName) {
-        android.util.Log.d("Lobby", "DEBUG: setLobbyName() called with: " + lobbyName + ", caller: " + new Exception().getStackTrace()[1]);
+        // Only log the first few times per session to avoid log spam
+        if (!loggedNameOperations && Math.random() < 0.05) { // Log ~5% of calls
+            android.util.Log.d("Lobby", "Lobby name set to: " + lobbyName);
+            // After logging 3-5 times, stop logging these operations
+            if (Math.random() < 0.3) loggedNameOperations = true;
+        }
         this.lobbyName = lobbyName;
     }
 
@@ -173,12 +189,27 @@ public class Lobby {
         return roundDurationSeconds;
     }
     
+    /**
+     * Check if this lobby is locked (either game started or capacity reached)
+     * @return true if the lobby is locked, false otherwise
+     */
     public boolean isLocked() {
-        return isLocked;
+        // A lobby is locked if it's in game or at max capacity
+        return isLocked || inGame || (maxPlayers > 0 && players != null && players.size() >= maxPlayers);
     }
     
+    /**
+     * Set the locked status for this lobby
+     * @param locked the new locked status
+     */
     public void setLocked(boolean locked) {
         isLocked = locked;
+        
+        // If locking because game started, also set inGame flag
+        if (locked) {
+            // A lobby is typically locked when transitioning to the game
+            Log.d("Lobby", "Lobby " + lobbyId + " is now locked");
+        }
     }
     
     public int getMaxPlayers() {
@@ -213,9 +244,50 @@ public class Lobby {
         }
     }
     
+    /**
+     * Checks if this lobby is currently in an active game session
+     * @return true if the lobby has an active game, false otherwise
+     */
+    public boolean isInGame() {
+        return inGame;
+    }
+    
+    /**
+     * Sets whether this lobby is currently in an active game session
+     * When true, this lobby should be locked and filtered out from available lobbies list
+     * @param inGame true if the lobby has started a game, false when game ends
+     */
+    public void setInGame(boolean inGame) {
+        this.inGame = inGame;
+        
+        // When entering game, auto-lock the lobby to prevent new players from joining
+        if (inGame) {
+            this.isLocked = true;
+            Log.d("Lobby", "Lobby " + lobbyId + " is now in game and locked");
+        }
+        
+        // When game ends, automatically unlock the lobby if not at max capacity
+        if (!inGame && players != null && players.size() < maxPlayers) {
+            this.isLocked = false;
+            Log.d("Lobby", "Lobby " + lobbyId + " game ended, lobby unlocked");
+        }
+    }
+    
     public void addPlayer(User player) {
-        if (players.size() < maxPlayers && !isLocked) {
+        // Check if lobby is already in game or at max capacity
+        boolean isFull = (players != null && players.size() >= maxPlayers);
+        
+        if (!inGame && !isFull) {
             players.add(player);
+            
+            // Auto-lock when lobby reaches max capacity
+            if (players.size() >= maxPlayers) {
+                this.isLocked = true;
+                Log.d("Lobby", "Lobby " + lobbyId + " is now full and locked");
+            }
+        } else {
+            Log.d("Lobby", "Cannot add player to lobby " + lobbyId + 
+                  ": inGame=" + inGame + ", isFull=" + isFull);
         }
     }
     

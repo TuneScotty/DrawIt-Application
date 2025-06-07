@@ -24,6 +24,7 @@ public class Game {
     
     public enum GameState {
         WAITING,    // Game created but not started
+        ACTIVE,     // General active game state (from server)
         DRAWING,    // Players are drawing
         VOTING,     // Players are voting on drawings
         LEADERBOARD, // Round results are shown
@@ -43,6 +44,8 @@ public class Game {
     private GameState gameState;
     private String currentWord;
     private String currentDrawerId;
+    // New: hostId of the player who started/hosts the game
+    private String hostId;
     
     // Maps userId to their current score
     private Map<String, Float> playerScores;
@@ -56,9 +59,14 @@ public class Game {
     // Transient field for current drawer (not saved in database)
     private transient User currentDrawer;
     
+    // List of players in the game (not saved in database)
+    private transient List<User> players;
+    
     public Game() {
         this.playerScores = new HashMap<>();
         this.currentRoundDrawings = new ArrayList<>();
+        this.players = new ArrayList<>();
+        this.hostId = null;
     }
     
     @Ignore
@@ -72,6 +80,7 @@ public class Game {
         this.gameState = GameState.WAITING;
         this.playerScores = new HashMap<>();
         this.currentRoundDrawings = new ArrayList<>();
+        this.hostId = null;
     }
     
     @NonNull
@@ -131,6 +140,14 @@ public class Game {
         this.totalRounds = numRounds;
     }
     
+    /**
+     * Alias for getTotalRounds to maintain API compatibility
+     * @return The total number of rounds for the game
+     */
+    public int getNumRounds() {
+        return this.totalRounds;
+    }
+    
     public int getRoundDurationSeconds() {
         return roundDurationSeconds;
     }
@@ -149,10 +166,20 @@ public class Game {
     
     /**
      * Convenience method for getting game state (used by fragments)
+     *
      * @return Current game state
      */
     public GameState getState() {
         return gameState;
+    }
+    
+    /**
+     * Convenience method for setting game state (used by viewmodels)
+     * 
+     * @param state The new game state
+     */
+    public void setState(GameState state) {
+        this.gameState = state;
     }
     
     /**
@@ -206,12 +233,44 @@ public class Game {
         }
     }
     
+    public String getHostId() {
+        return hostId;
+    }
+    
+    public void setHostId(String hostId) {
+        this.hostId = hostId;
+    }
+    
+    /**
+     * Get the list of players in the game
+     * @return List of User objects representing players
+     */
+    public List<User> getPlayers() {
+        return players;
+    }
+    
+    /**
+     * Set the list of players in the game
+     * @param players List of User objects representing players
+     */
+    public void setPlayers(List<User> players) {
+        this.players = players;
+    }
+    
     public Map<String, Float> getPlayerScores() {
         return playerScores;
     }
     
     public void setPlayerScores(Map<String, Float> playerScores) {
         this.playerScores = playerScores;
+    }
+    
+    /**
+     * Alias for setPlayerScores to maintain API compatibility
+     * @param scores Map of player scores with user IDs as keys
+     */
+    public void setScores(Map<String, Float> scores) {
+        setPlayerScores(scores);
     }
     
     public List<Drawing> getCurrentRoundDrawings() {
@@ -266,6 +325,54 @@ public class Game {
         }
         leaderboard.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
         return leaderboard;
+    }
+    
+    // Drawing paths as JSON string for real-time transmission
+    @Ignore
+    private String drawingPaths;
+    
+    // Chat messages for the current game
+    @Ignore
+    private List<String> messages = new ArrayList<>();
+    
+    /**
+     * Get the current drawing paths as a JSON string
+     * @return JSON representation of drawing paths
+     */
+    public String getDrawingPaths() {
+        return drawingPaths;
+    }
+    
+    /**
+     * Set drawing paths from a JSON string
+     * @param drawingPaths JSON string of drawing paths
+     */
+    public void setDrawingPaths(String drawingPaths) {
+        this.drawingPaths = drawingPaths;
+    }
+    
+    /**
+     * Check if the game has drawing paths
+     * @return true if drawing paths exist and aren't empty
+     */
+    public boolean hasDrawingPaths() {
+        return drawingPaths != null && !drawingPaths.isEmpty();
+    }
+    
+    /**
+     * Get the chat messages for this game
+     * @return List of chat message strings
+     */
+    public List<String> getMessages() {
+        return messages;
+    }
+    
+    /**
+     * Set the chat messages for this game
+     * @param messages List of chat message strings
+     */
+    public void setMessages(List<String> messages) {
+        this.messages = messages != null ? messages : new ArrayList<>();
     }
     
     /**

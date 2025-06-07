@@ -31,16 +31,13 @@ public interface LobbyDao {
     LiveData<Lobby> getLobbyById(String lobbyId);
     
     @Query("SELECT * FROM lobbies WHERE lobbyId = :lobbyId")
-    Lobby getLobbyByIdDirect(String lobbyId);
+    Lobby getLobbyByIdSync(String lobbyId);
     
-    @Query("SELECT * FROM lobbies WHERE isLocked = 0")
+    @Query("SELECT * FROM lobbies WHERE inGame = 0")
     LiveData<List<Lobby>> getAvailableLobbies();
     
     @Query("SELECT * FROM lobbies WHERE hostId = :userId")
     LiveData<List<Lobby>> getLobbiesHostedBy(String userId);
-    
-    @Query("UPDATE lobbies SET isLocked = :isLocked WHERE lobbyId = :lobbyId")
-    void updateLobbyLockStatus(String lobbyId, boolean isLocked);
     
     @Query("UPDATE lobbies SET hostId = :newHostId WHERE lobbyId = :lobbyId")
     void updateLobbyHost(String lobbyId, String newHostId);

@@ -363,14 +363,10 @@ public class LobbiesFragment extends Fragment implements LobbyAdapter.LobbyClick
     
     @Override
     public void onLobbyClick(Lobby lobby) {
-        // Navigate to lobby detail screen
         String lobbyId = lobby.getLobbyId();
-        // Ensure we have a valid lobby name - never pass null to Bundle.putString
         String lobbyName = lobby.getLobbyName();
         if (lobbyName == null) {
             lobbyName = "Unnamed Lobby";
-            // Log the issue for debugging
-            Log.w("LobbiesFragment", "Found lobby with null name: " + lobbyId);
         }
         
         Bundle args = new Bundle();

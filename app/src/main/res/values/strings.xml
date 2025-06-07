@@ -20,6 +20,7 @@
     <string name="lock_lobby">Lock Lobby</string>
     <string name="unlock_lobby">Unlock Lobby</string>
     <string name="start_game">Start Game</string>
+    <string name="starting_game">Starting game...</string>
     <string name="lobby_settings">Lobby Settings</string>
     <string name="players">Players</string>
     <string name="host">Host</string>
@@ -28,6 +29,7 @@
     <string name="waiting_for_host_to_start">Waiting for host to start the game</string>
     <string name="player_avatar">Player Avatar</string>
     <string name="lobby_locked">Lobby is locked</string>
+    <string name="lobby_in_game">Lobby is in active game</string>
     <string name="player_status">Player status</string>
     
     <!-- Lobby error messages -->

@@ -5,7 +5,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
+import java.util.UUID;
+import org.json.JSONObject;
+
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MediatorLiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -17,14 +19,14 @@ import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
 import java.io.IOException;
-import com.example.drawit_app.network.ApiService;
-import com.example.drawit_app.network.WebSocketService;
-import com.example.drawit_app.network.message.GameStateMessage;
-import com.example.drawit_app.network.response.ApiResponse;
-import com.example.drawit_app.network.message.LobbyStateMessage;
-import com.example.drawit_app.network.request.CreateLobbyRequest;
-import com.example.drawit_app.network.request.JoinLobbyRequest;
-import com.example.drawit_app.network.response.LobbyListResponse;
+import com.example.drawit_app.api.ApiService;
+import com.example.drawit_app.api.WebSocketService;
+import com.example.drawit_app.api.message.GameStateMessage;
+import com.example.drawit_app.api.response.ApiResponse;
+import com.example.drawit_app.api.message.LobbyStateMessage;
+import com.example.drawit_app.api.request.CreateLobbyRequest;
+import com.example.drawit_app.api.response.LobbyListResponse;
+import com.example.drawit_app.api.request.JoinLobbyRequest;
 import com.example.drawit_app.util.AppExecutors;
 import com.example.drawit_app.util.LobbySettingsManager;
 import com.example.drawit_app.util.WebSocketMessageConverter;
@@ -33,6 +35,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.ResponseBody;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -48,12 +56,35 @@ public class LobbyRepository extends BaseRepository {
 
     // Required by BaseRepository
     @Override
-    public void onFailure(retrofit2.Call<com.example.drawit_app.network.response.ApiResponse<com.example.drawit_app.network.response.LobbyListResponse>> call, Throwable t) {
+    public void onFailure(retrofit2.Call<com.example.drawit_app.api.response.ApiResponse<com.example.drawit_app.api.response.LobbyListResponse>> call, Throwable t) {
         Log.e(TAG, "LobbyListResponse API call failed: " + t.getMessage(), t);
         //setError("Failed to load lobbies: " + t.getMessage()); // Example of using setError from BaseRepository
     }
 
     private static final String TAG = "LobbyRepository";
+    
+    // Used for reliable game transitions
+    private String currentGameId = null;
+    
+    /**
+     * Set the current game ID for reliable game transitions
+     * This method is used to ensure game ID is available during transitions
+     * 
+     * @param gameId The ID of the game being started
+     */
+    public void setCurrentGameId(String gameId) {
+        Log.d(TAG, "Setting current game ID: " + gameId);
+        this.currentGameId = gameId;
+    }
+    
+    /**
+     * Get the current game ID
+     * 
+     * @return The current game ID or null if not set
+     */
+    public String getCurrentGameId() {
+        return currentGameId;
+    }
     private static final long CACHE_EXPIRY_MS = 10000; // 10 seconds cache expiry
 
     // Core dependencies
@@ -161,6 +192,13 @@ public class LobbyRepository extends BaseRepository {
             Log.i(TAG, "🔑 Setting WebSocket auth token: " +
                   (authToken.length() > 5 ? authToken.substring(0, 5) + "..." : "[short token]"));
             webSocketService.setAuthToken(authToken);
+            
+            // NEW: Pass current user ID to WebSocketService for host/non-host logic
+            if (userRepository.getCurrentUser() != null && userRepository.getCurrentUser().getValue() != null) {
+                String currentUserId = userRepository.getCurrentUser().getValue().getUserId();
+                webSocketService.setCurrentUserId(currentUserId);
+                Log.d(TAG, "Passed current user id " + currentUserId + " to WebSocketService");
+            }
         } else {
             Log.w(TAG, "⚠️ No valid auth token available for WebSocket connection");
         }
@@ -172,7 +210,7 @@ public class LobbyRepository extends BaseRepository {
 
         webSocketService.setLobbyUpdateCallback(new WebSocketService.LobbyUpdateCallback() {
             @Override
-            public void onLobbiesUpdated(com.example.drawit_app.network.message.LobbiesUpdateMessage message) {
+            public void onLobbiesUpdated(com.example.drawit_app.api.message.LobbiesUpdateMessage message) {
                 if (message != null && message.getLobbiesPayload().getLobbies() != null) {
                     Log.d(TAG, "Received lobby list update via WebSocket with " + message.getLobbiesPayload().getLobbies().size() + " lobbies");
 
@@ -217,48 +255,8 @@ public class LobbyRepository extends BaseRepository {
                     String lobbyId = updatedLobby.getLobbyId();
                     String event = message.getLobbyPayload().getEvent();
 
-                    // Enhanced logging with emoji for visibility and consistent format
-                    Log.i(TAG, "🔔 WEBSOCKET EVENT: " + (event != null ? event : "update") +
-                          " for lobby " + lobbyId + " (" + updatedLobby.getLobbyName() + ")");
-
-                    // Log detailed timestamp for correlation with server logs
-                    String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
-                        .format(new java.util.Date());
-                    Log.i(TAG, "⏰ WebSocket message received at: " + timestamp);
-
-                    // Log player list details with clear formatting
-                    if (updatedLobby.getPlayers() != null) {
-                        Log.i(TAG, "👥 PLAYERS LIST FROM WEBSOCKET: " + updatedLobby.getPlayers().size() +
-                              " players in lobby " + updatedLobby.getLobbyId());
-                        for (User player : updatedLobby.getPlayers()) {
-                            Log.i(TAG, "   👤 Player: " + player.getUsername() +
-                                  " (ID: " + player.getUserId() + ")");
-                        }
-                    } else {
-                        Log.e(TAG, "⚠️ WEBSOCKET ERROR: Lobby " + updatedLobby.getLobbyId() +
-                              " has NULL players list! This indicates a potential server issue.");
-                    }
-
-                    // DEBUG: Log the lobby name received from WebSocket
-                    Log.d(TAG, "DEBUG: WebSocket lobby received - ID: " + lobbyId +
-                          ", Raw name value: " + updatedLobby.getLobbyName() +
-                          ", Name null? " + (updatedLobby.getLobbyName() == null));
-
-                    // Ensure lobby name is preserved
-                    if (updatedLobby.getLobbyName() == null || updatedLobby.getLobbyName().isEmpty()) {
-                        // Try to find existing name in cache or database
-                        CachedLobby cachedLobby = lobbyCache.get(lobbyId);
-                        if (cachedLobby != null && cachedLobby.lobby.getLobbyName() != null &&
-                            !cachedLobby.lobby.getLobbyName().isEmpty()) {
-                            updatedLobby.setLobbyName(cachedLobby.lobby.getLobbyName());
-                            Log.d(TAG, "Restoring lobby name from cache: " + cachedLobby.lobby.getLobbyName());
-                        }
-                    }
-
-                    Log.d(TAG, "WebSocket update received for lobby: " + lobbyId +
-                          ", name: " + updatedLobby.getLobbyName() +
-                          ", players: " + (updatedLobby.getPlayers() != null ? updatedLobby.getPlayers().size() : 0) +
-                          ", event: " + (event != null ? event : "update"));
+                    // Simple log without BuildConfig check
+                    Log.d(TAG, "WebSocket lobby event=" + (event != null ? event : "update") + ", lobbyId=" + lobbyId);
 
                     // Handle empty lobbies or lobby deletion events
                     if ("deleted".equals(event) ||
@@ -317,7 +315,7 @@ public class LobbyRepository extends BaseRepository {
                         // Check what was actually saved
                         Handler handler = new Handler(Looper.getMainLooper());
                         handler.postDelayed(() -> {
-                            Lobby savedLobby = lobbyDao.getLobbyByIdDirect(updatedLobby.getLobbyId());
+                            Lobby savedLobby = lobbyDao.getLobbyByIdSync(updatedLobby.getLobbyId());
                             if (savedLobby != null) {
                                 Log.d(TAG, "DEBUG: After DB insert - ID: " + savedLobby.getLobbyId() +
                                       ", Name: " + savedLobby.getLobbyName() +
@@ -471,18 +469,57 @@ public class LobbyRepository extends BaseRepository {
                 if (message != null && message.getGamePayload() != null && message.getGamePayload().getGame() != null) {
                     String gameId = message.getGamePayload().getGame().getGameId();
                     String event = message.getGamePayload().getEvent();
+                    String lobbyId = message.getGamePayload().getGame().getLobbyId();
 
+                    // Enhanced logging showing message details and thread info
                     Log.i(TAG, "🎮 GAME STATE EVENT: " + (event != null ? event : "update") +
-                          " for game " + gameId);
+                          " for game " + gameId + " on thread: " + Thread.currentThread().getName());
+
+                    // Store the game ID for reliable transitions
+                    setCurrentGameId(gameId);
+                    
+                    // Critical code for handling game start events
+                    if (event != null && event.equals("started")) {
+                        Log.i(TAG, "🚨 GAME STARTED EVENT received via WebSocket for game " + gameId + ", lobby " + lobbyId);
+                        
+                        // Make sure the game object has a proper state
+                        if (message.getGamePayload().getGame().getGameState() == null) {
+                            message.getGamePayload().getGame().setGameState(Game.GameState.ACTIVE);
+                            Log.d(TAG, "Set default game state to ACTIVE for new game");
+                        }
+                        
+                        // Make sure the model layer knows the lobby is in-game
+                        if (lobbyId != null) {
+                            setLobbyInGameState(lobbyId, true);
+                        }
+                    }
 
                     // Log detailed timestamp for game events
                     String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
                         .format(new java.util.Date());
                     Log.i(TAG, "⏰ Game state update received at: " + timestamp);
 
-                    // Forward to external callback if present
+                    // Forward to external callback with retry mechanism for critical events
                     if (externalCallback != null) {
-                        externalCallback.onGameStateChanged(message);
+                        try {
+                            Log.i(TAG, "👉 Forwarding game state event to UI callback");
+                            externalCallback.onGameStateChanged(message);
+                            
+                            // For game start events, schedule an extra delivery attempt
+                            // to ensure UI transition occurs
+                            if (event != null && event.equals("started")) {
+                                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                    try {
+                                        Log.i(TAG, "🔁 Extra delivery attempt for game start event");
+                                        externalCallback.onGameStateChanged(message);
+                                    } catch (Exception ignored) {}
+                                }, 1000);
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "❌ Error forwarding game state to UI: " + e.getMessage(), e);
+                        }
+                    } else {
+                        Log.w(TAG, "⚠️ No external callback registered to receive game state events");
                     }
                 } else {
                     Log.e(TAG, "⚠️ Received null or invalid game state message");
@@ -567,11 +604,24 @@ public class LobbyRepository extends BaseRepository {
                                 ", JSON annotation working? " + (lobby.getLobbyName() != null));
                     }
 
-                    // Update database in background
-                    List<Lobby> finalLobbies = lobbies; // effectively final for lambda
+                    // Filter out lobbies that are in active game sessions
+                    List<Lobby> availableForJoining = new ArrayList<>();
+                    for (Lobby lobby : lobbies) {
+                        // Only add lobbies that are NOT in an active game
+                        if (!lobby.isInGame()) {
+                            availableForJoining.add(lobby);
+                        } else {
+                            Log.d(TAG, "Filtering out lobby " + lobby.getLobbyId() + 
+                                  " (" + lobby.getLobbyName() + ") because it's in an active game");
+                        }
+                    }
+                    
+                    Log.d(TAG, "Filtered lobbies: " + availableForJoining.size() + 
+                          " available out of " + lobbies.size() + " total");
+
                     appExecutors.diskIO().execute(() -> {
                         lobbyDao.deleteAllLobbiesDirectly();
-                        for (Lobby lobby : finalLobbies) {
+                        for (Lobby lobby : availableForJoining) {
                             // Apply any local settings before storing
                             settingsManager.applySettings(lobby);
                             lobbyDao.insert(lobby);
@@ -751,7 +801,6 @@ private void ensureHostInPlayerList(Lobby lobby) {
         return result;
     }
 
-    // Flag to track if a join request is in progress to prevent duplicate requests
     private volatile boolean joinRequestInProgress = false;
     private String currentJoinAttemptLobbyId = null;
 
@@ -816,16 +865,31 @@ private void ensureHostInPlayerList(Lobby lobby) {
                                     // Use postValue instead of setValue for background thread safety
                                     currentLobby.postValue(joinedLobby);
 
-                                    // Don't attempt to use WebSocket join - it's causing errors with serialization
-                                    // The API join is sufficient, and WebSocket updates will work automatically
-                                    // This prevents the serialization error with WebSocketMessage
+                                    // Get the current user ID to pass along with the lobby ID
+                                    String userId = userRepository.getUserId();
+                                    if (userId == null) {
+                                        Log.w(TAG, "⚠️ User ID is null - cannot properly join lobby via WebSocket");
+                                    }
+                                    
                                     if (webSocketService.isConnected()) {
-                                        Log.d(TAG, "API join successful for lobby ID: " + joinedLobby.getLobbyId() +
-                                              ", WebSocket connection is active for updates");
+                                        Log.i(TAG, "🔌 WebSocket connected - sending lobby join message for lobby: " + joinedLobby.getLobbyId() + ", user: " + userId);
+                                        // Send WebSocket join message to register this connection with the lobby
+                                        webSocketService.joinLobby(joinedLobby.getLobbyId(), userId);
+                                        webSocketService.setCurrentLobbyId(joinedLobby.getLobbyId());
                                     } else {
-                                        Log.d(TAG, "API join successful but WebSocket not connected. Real-time updates may be delayed.");
-                                        // Try to connect WebSocket for future updates
+                                        Log.w(TAG, "⚠️ WebSocket not connected - attempting to connect before joining lobby");
+                                        // Connect first, then join in the connected callback
                                         webSocketService.connect();
+                                        // Add a slight delay to ensure connection is established
+                                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                            if (webSocketService.isConnected()) {
+                                                Log.i(TAG, "🔄 WebSocket now connected - sending delayed join for lobby: " + joinedLobby.getLobbyId() + ", user: " + userId);
+                                                webSocketService.joinLobby(joinedLobby.getLobbyId(), userId);
+                                                webSocketService.setCurrentLobbyId(joinedLobby.getLobbyId());
+                                            } else {
+                                                Log.e(TAG, "❌ WebSocket still not connected after delay - lobby real-time updates may not work");
+                                            }
+                                        }, 1000); // 1 second delay
                                     }
 
                                     // Post success on main thread
@@ -878,18 +942,44 @@ private void ensureHostInPlayerList(Lobby lobby) {
     }
 
     /**
-     * Leave the current lobby
+     * Leave the current lobby with improved error handling
+     * 
+     * @return LiveData with Resource containing the result
      */
     public LiveData<Resource<Void>> leaveLobby() {
         String token = userRepository.getAuthToken();
         Lobby lobby = currentLobby.getValue();
+        MutableLiveData<Resource<Void>> result = new MutableLiveData<>();
 
-        if (token == null || lobby == null) {
-            return createErrorLiveData("Not in a lobby or not authenticated");
+        // Case 1: No auth token - silently handle as a success since we're effectively "not in a lobby"
+        if (token == null) {
+            Log.d(TAG, "leaveLobby: No auth token, treating as already logged out");
+            // Clear current lobby state just to be safe
+            currentLobby.postValue(null);
+            result.postValue(Resource.success(null));
+            return result;
         }
 
+        // Case 2: Not in a lobby - silently succeed
+        if (lobby == null) {
+            Log.d(TAG, "leaveLobby: Not in a lobby, treating as success");
+            result.postValue(Resource.success(null));
+            return result;
+        }
+        
+        // At this point we have both token and lobby
         String lobbyId = lobby.getLobbyId();
-        MutableLiveData<Resource<Void>> result = new MutableLiveData<>();
+        
+        // Case 3: Invalid lobby ID - silently handle
+        if (lobbyId == null || lobbyId.isEmpty()) {
+            Log.d(TAG, "leaveLobby: Invalid lobby ID, clearing lobby state");
+            currentLobby.postValue(null);
+            result.postValue(Resource.success(null));
+            return result;
+        }
+        
+        // Normal case: Actually try to leave the lobby
+        Log.d(TAG, "leaveLobby: Attempting to leave lobby with ID: " + lobbyId);
         result.setValue(Resource.loading(null));
 
         apiService.leaveLobby("Bearer " + token, lobbyId).enqueue(new retrofit2.Callback<ApiResponse<Void>>() {
@@ -897,26 +987,59 @@ private void ensureHostInPlayerList(Lobby lobby) {
             public void onResponse(retrofit2.Call<ApiResponse<Void>> call,
                                   retrofit2.Response<ApiResponse<Void>> response) {
 
-                if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
-                    // Disconnect from WebSocket
+                // Clear current lobby on any response - this ensures consistent local state
+                // even if the API call failed. We want our local state to reflect "not in a lobby"
+                currentLobby.postValue(null);
+
+                // Tell WebSocket to leave the lobby
+                try {
                     webSocketService.leaveLobby(lobbyId);
-
-                    // Clear current lobby
-                    currentLobby.postValue(null);
-
+                } catch (Exception e) {
+                    Log.w(TAG, "WebSocket leave lobby failed, but continuing: " + e.getMessage());
+                    // We don't propagate WebSocket errors to the UI here
+                }
+                
+                // Success case
+                if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
+                    Log.d(TAG, "Successfully left lobby: " + lobbyId);
                     result.postValue(Resource.success(null));
-                } else {
+                } 
+                // Certain 400-level errors should still be treated as success from UI perspective
+                else if (response.code() == 404 || 
+                         (response.body() != null && 
+                          response.body().getMessage() != null && 
+                          (response.body().getMessage().contains("not in lobby") || 
+                           response.body().getMessage().contains("not found")))) {
+                    
+                    Log.d(TAG, "Lobby not found or already left - treating as success");
+                    result.postValue(Resource.success(null));
+                }
+                // Actual error worth reporting to the user
+                else {
                     String errorMsg = response.body() != null && response.body().getMessage() != null ?
                                      response.body().getMessage() : "Failed to leave lobby";
-                    Log.e(TAG, errorMsg);
-                    result.setValue(Resource.error(errorMsg, null));
+                    Log.e(TAG, "Error leaving lobby: " + errorMsg + ", HTTP code: " + response.code());
+                    
+                    // Only propagate server errors (500s) or auth problems
+                    // For other issues, just treat as success since the user is effectively "not in a lobby"
+                    if (response.code() >= 500 || response.code() == 401 || response.code() == 403) {
+                        result.setValue(Resource.error(errorMsg, null));
+                    } else {
+                        result.setValue(Resource.success(null));
+                    }
                 }
             }
 
             @Override
             public void onFailure(retrofit2.Call<ApiResponse<Void>> call, Throwable t) {
-                Log.e(TAG, "Network error: " + t.getMessage(), t);
-                result.postValue(Resource.error("Network error: " + t.getMessage(), null));
+                Log.e(TAG, "Network error leaving lobby: " + t.getMessage(), t);
+                
+                // Clear current lobby regardless of network failure
+                currentLobby.postValue(null);
+                
+                // For network failures, no need to show error to user - just treat as success
+                // The user is already visually no longer in a lobby, so showing errors is confusing
+                result.postValue(Resource.success(null));
             }
         });
 
@@ -993,7 +1116,8 @@ private void ensureHostInPlayerList(Lobby lobby) {
     }
 
     /**
-     * Start a game in a lobby (host only)
+     * Start a game in a lobby (host only) using WebSockets
+     * Games are temporary WebSocket states rather than persisted database objects
      */
     public LiveData<Resource<String>> startGame(String lobbyId) {
         String token = userRepository.getAuthToken();
@@ -1003,75 +1127,177 @@ private void ensureHostInPlayerList(Lobby lobby) {
 
         MutableLiveData<Resource<String>> result = new MutableLiveData<>();
         result.setValue(Resource.loading(null));
-
-        apiService.startGame("Bearer " + token, lobbyId).enqueue(new retrofit2.Callback<ApiResponse<Game>>() {
-            @Override
-            public void onResponse(retrofit2.Call<ApiResponse<Game>> call,
-                                  retrofit2.Response<ApiResponse<Game>> response) {
-
-                if (response.isSuccessful() && response.body() != null &&
-                    response.body().isSuccess() && response.body().getData() != null) {
-
-                    Game game = response.body().getData();
-                    String gameId = game.getGameId();
-                    result.postValue(Resource.success(gameId));
-
-                    // IMPORTANT BUGFIX: The WebSocket message might not be received
-                    // Create a synthetic game state message to ensure clients transition to game screen
-                    Log.i(TAG, "🎲 Game started successfully via API, gameId: " + gameId);
-                    Log.i(TAG, "🔍 Creating synthetic game_state message as WebSocket fallback");
-
-                    // Wait a short time to see if WebSocket message arrives first
-                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        if (externalCallback != null) {
-                            try {
-                                GameStateMessage gameStateMessage = getGameStateMessage(gameId);
-
-                                // Forward the synthetic message to the callback
-                                Log.i(TAG, "🚀 Dispatching synthetic game_state message to trigger navigation");
-                                externalCallback.onGameStateChanged(gameStateMessage);
-                            } catch (Exception e) {
-                                Log.e(TAG, "⚠️ Error creating synthetic game state message: " + e.getMessage(), e);
-                            }
-                        } else {
-                            Log.e(TAG, "⚠️ No external callback registered - cannot send synthetic game state");
-                        }
-                    }, 1000); // Wait 1 second to see if WebSocket message arrives first
-                } else {
-                    String errorMsg = response.body() != null && response.body().getMessage() != null ?
-                                     response.body().getMessage() : "Failed to start game";
-                    Log.e(TAG, errorMsg);
-                    result.postValue(Resource.error(errorMsg, null));
+        
+        // Get current lobby to ensure we have all necessary information
+        Lobby currentLobby = getCurrentLobby().getValue();
+        
+        // If currentLobby is null, try to get it from multiple sources
+        if (currentLobby == null) {
+            Log.d(TAG, "Current lobby is null, trying to find lobby: " + lobbyId);
+            
+            // First check the cache with the provided lobbyId
+            CachedLobby cachedLobby = lobbyCache.get(lobbyId);
+            if (cachedLobby != null && !cachedLobby.isExpired()) {
+                Log.d(TAG, "Found lobby in cache: " + lobbyId);
+                currentLobby = cachedLobby.getLobby();
+                // Update the current lobby in the repository
+                this.currentLobby.setValue(currentLobby);
+            }
+            
+            // If still null, check available lobbies (might be in memory but not set as current)
+            if (currentLobby == null && availableLobbies.getValue() != null) {
+                Log.d(TAG, "Checking available lobbies list for: " + lobbyId);
+                for (Lobby lobby : availableLobbies.getValue()) {
+                    if (lobby.getLobbyId().equals(lobbyId)) {
+                        Log.d(TAG, "Found lobby in available lobbies: " + lobbyId);
+                        currentLobby = lobby;
+                        this.currentLobby.setValue(currentLobby);
+                        break;
+                    }
                 }
             }
-
-            @NonNull
-            private GameStateMessage getGameStateMessage(String gameId) {
-                Game gameObj =
-                    new GameStateMessage.GamePayload().getGame();
-                gameObj.setGameId(gameId);
-
-                GameStateMessage.GamePayload payload =
-                    new GameStateMessage.GamePayload();
-                payload.setEvent("started");
-                payload.setGame(gameObj);
-
-                GameStateMessage gameStateMessage =
-                    new GameStateMessage();
-                gameStateMessage.setGamePayload(payload);
-                gameStateMessage.setType("game_state");
-                return gameStateMessage;
+            
+            // If still null, check the database directly
+            if (currentLobby == null) {
+                Log.d(TAG, "Checking database for lobby: " + lobbyId);
+                try {
+                    // Use a CountDownLatch to synchronize with the database operation
+                    final CountDownLatch latch = new CountDownLatch(1);
+                    final Lobby[] dbLobbyContainer = new Lobby[1]; // Array to hold result across threads
+                    
+                    appExecutors.diskIO().execute(() -> {
+                        try {
+                            dbLobbyContainer[0] = lobbyDao.getLobbyByIdSync(lobbyId);
+                        } finally {
+                            latch.countDown(); // Signal completion regardless of result
+                        }
+                    });
+                    
+                    // Wait for the database operation to complete (with timeout)
+                    boolean completed = latch.await(500, TimeUnit.MILLISECONDS);
+                    if (!completed) {
+                        Log.w(TAG, "Database lookup timed out for lobby: " + lobbyId);
+                    }
+                    
+                    // Check if we found the lobby
+                    Lobby dbLobby = dbLobbyContainer[0];
+                    if (dbLobby != null) {
+                        Log.d(TAG, "Found lobby in database: " + lobbyId);
+                        // Ensure settings are applied
+                        settingsManager.applySettings(dbLobby);
+                        currentLobby = dbLobby;
+                        this.currentLobby.setValue(currentLobby);
+                        
+                        // Also update the cache for future use
+                        lobbyCache.put(lobbyId, new CachedLobby(dbLobby));
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error checking database for lobby: " + e.getMessage(), e);
+                    // Continue with flow, will check if currentLobby is still null below
+                }
             }
+            
+            // If still null, as last resort, create a minimal lobby object
+            if (currentLobby == null) {
+                Log.d(TAG, "Creating minimal lobby object for: " + lobbyId);
+                currentLobby = new Lobby();
+                currentLobby.setLobbyId(lobbyId);
+                // Set default game settings
+                currentLobby.setNumRounds(3); // Default value
+                currentLobby.setRoundDurationSeconds(60); // Default value
+                
+                // Try to apply any stored settings
+                settingsManager.applySettings(currentLobby);
+                
+                Log.w(TAG, "⚠️ Created minimal lobby object as fallback. Some features may be limited.");
+                
+                // Don't update currentLobby LiveData here to avoid persistent state issues
+            }
+        }
+        
+        // Generate a temporary game ID locally - this will be used only for tracking
+        String tempGameId = "game_" + UUID.randomUUID().toString();
+        Log.d(TAG, "Starting game via WebSocket with temporary ID: " + tempGameId);
+        
+        try {
+            // Send a WebSocket message to start the game
+            // IMPORTANT: Use parameter names that match the server's expected format:
+            // 'lobbyId' and 'gameId' instead of 'lobby_id' and 'temp_game_id'
+            JSONObject startGameMsg = new JSONObject();
+            startGameMsg.put("type", "start_game");
+            startGameMsg.put("lobbyId", lobbyId);  // Server expects 'lobbyId' not 'lobby_id'
+            startGameMsg.put("gameId", tempGameId); // Server expects 'gameId' not 'temp_game_id'
+            startGameMsg.put("num_rounds", currentLobby.getNumRounds());
+            startGameMsg.put("round_duration", currentLobby.getRoundDurationSeconds());
+            
+            webSocketService.sendMessage(startGameMsg.toString());
+            
+            // Immediately mark the lobby as in-game
+            setLobbyInGameState(lobbyId, true);
+            
+            // We'll respond with success immediately and let the WebSocket handle the state change
+            result.postValue(Resource.success(tempGameId));
+            
+            // Log success
+            Log.i(TAG, "🎲 Game started successfully via WebSocket, tempGameId: " + tempGameId);
+            Log.i(TAG, "✅ WebSocket approach eliminates multiple game object creation issues");
+            Log.d(TAG, "Navigation will be handled by WebSocketService when real game_state message arrives");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting game via WebSocket: " + e.getMessage(), e);
+            result.postValue(Resource.error("Failed to start game: " + e.getMessage(), null));
+            
+            // Reset the in-game state if we failed
+            setLobbyInGameState(lobbyId, false);
+        }
+        
+        return result;
+    }
 
-            @Override
-            public void onFailure(retrofit2.Call<ApiResponse<Game>> call, Throwable t) {
-                Log.e(TAG, "Network error: " + t.getMessage(), t);
-                // Using postValue instead of setValue for thread safety
-                result.postValue(Resource.error("Network error: " + t.getMessage(), null));
+    public void setLobbyInGameState(String lobbyId, boolean inGame) {
+        if (lobbyId == null || lobbyId.isEmpty()) {
+            Log.e(TAG, "❌ Cannot set inGame state: Invalid lobby ID");
+            return;
+        }
+        
+        Log.i(TAG, String.format("🎲 Setting lobby %s inGame state to %s", lobbyId, inGame));
+        
+        // Update cache first for immediate effect
+        CachedLobby cachedLobby = lobbyCache.get(lobbyId);
+        if (cachedLobby != null && cachedLobby.lobby != null) {
+            cachedLobby.lobby.setInGame(inGame);
+            Log.d(TAG, "Updated inGame state in cache for lobby: " + lobbyId);
+        } else {
+            Log.d(TAG, "Lobby not found in cache: " + lobbyId);
+        }
+        
+        // Update local database
+        appExecutors.diskIO().execute(() -> {
+            try {
+                Lobby lobby = lobbyDao.getLobbyByIdSync(lobbyId);
+                if (lobby != null) {
+                    lobby.setInGame(inGame);
+                    lobbyDao.insert(lobby);
+                    Log.d(TAG, "Updated inGame state in database for lobby: " + lobbyId);
+                } else {
+                    Log.w(TAG, "Lobby not found in database: " + lobbyId);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error updating lobby inGame state in database: " + e.getMessage(), e);
             }
         });
-
-        return result;
+        
+        // Notify the current lobby LiveData if this is the active lobby
+        Lobby currentLobbyValue = currentLobby.getValue();
+        if (currentLobbyValue != null && lobbyId.equals(currentLobbyValue.getLobbyId())) {
+            currentLobbyValue.setInGame(inGame);
+            appExecutors.mainThread().execute(() -> {
+                currentLobby.setValue(currentLobbyValue);
+            });
+        }
+        
+        // Refresh lobbies list to reflect the change
+        refreshLobbies();
     }
 
     /**
@@ -1110,7 +1336,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
         
         // Get the lobby to check if it's empty
         appExecutors.diskIO().execute(() -> {
-            Lobby lobby = lobbyDao.getLobbyByIdDirect(lobbyId);
+            Lobby lobby = lobbyDao.getLobbyByIdSync(lobbyId);
             if (lobby != null && (lobby.getPlayers() == null || lobby.getPlayers().isEmpty())) {
                 // Lobby is empty, delete it
                 lobbyDao.deleteLobbyById(lobbyId);
@@ -1162,7 +1388,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
         
         // Then check local database
         appExecutors.diskIO().execute(() -> {
-            Lobby lobby = lobbyDao.getLobbyByIdDirect(lobbyId);
+            Lobby lobby = lobbyDao.getLobbyByIdSync(lobbyId);
             if (lobby != null) {
                 // Update cache
                 lobbyCache.put(lobbyId, new CachedLobby(lobby));
@@ -1264,8 +1490,8 @@ private void ensureHostInPlayerList(Lobby lobby) {
             String lobbyId = updatedLobby.getLobbyId();
             String event = message.getLobbyPayload().getEvent();
 
-            Log.d(TAG, "🔄 Processing lobby state change for lobby: " + lobbyId + 
-                 ", event: " + (event != null ? event : "update"));
+            // Simple log without BuildConfig check
+            Log.d(TAG, "WebSocket lobby event=" + (event != null ? event : "update") + ", lobbyId=" + lobbyId);
 
             // Check for player join/leave events
             boolean isPlayerEvent = ("player_joined".equals(event) || "player_left".equals(event));
@@ -1336,7 +1562,7 @@ private void ensureHostInPlayerList(Lobby lobby) {
             
             // Update current lobby if it's the same one
             Lobby currentLobbyValue = currentLobby.getValue();
-            if (currentLobbyValue != null && currentLobbyValue.getLobbyId().equals(lobbyId)) {
+            if (currentLobbyValue != null && lobbyId.equals(currentLobbyValue.getLobbyId())) {
                 // Use postValue for thread safety
                 Log.d(TAG, "🔄 Updating current lobby LiveData with updated player list");
                 currentLobby.postValue(updatedLobby);

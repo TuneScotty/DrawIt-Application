@@ -1,14 +1,12 @@
-package com.example.drawit_app.network.message;
+package com.example.drawit_app.api.message;
+
+import android.util.Log;
 
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
 import com.squareup.moshi.Json;
-import com.squareup.moshi.JsonAdapter;
-import com.squareup.moshi.Moshi;
-import com.squareup.moshi.JsonReader;
-import com.squareup.moshi.JsonWriter;
 
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +14,7 @@ import java.util.Map;
  * WebSocket message for lobbies update notifications
  */
 public class LobbiesUpdateMessage extends WebSocketMessage {
+    private static final String TAG = "LobbiesUpdateMessage";
     
     public static final String TYPE_LOBBIES_UPDATE = "lobbies_update";
     
@@ -23,7 +22,10 @@ public class LobbiesUpdateMessage extends WebSocketMessage {
         super(TYPE_LOBBIES_UPDATE, null);
     }
     
-    // Modified to handle raw Map objects safely
+    /**
+     * Safely retrieves the payload as a LobbiesUpdatePayload object
+     * Handles conversion from Map if necessary to prevent ClassCastException
+     */
     public LobbiesUpdatePayload getLobbiesPayload() {
         Object rawPayload = getPayload();
         
@@ -34,27 +36,143 @@ public class LobbiesUpdateMessage extends WebSocketMessage {
         
         // If payload is a Map (what Moshi often creates), convert it
         if (rawPayload instanceof Map<?, ?>) {
-            Map<?, ?> map = (Map<?, ?>) rawPayload;
-            LobbiesUpdatePayload payload = new LobbiesUpdatePayload();
-            
-            // Handle lobbies array
-            if (map.containsKey("lobbies") && map.get("lobbies") instanceof List) {
-                payload.setLobbies((List<Lobby>) map.get("lobbies"));
+            try {
+                Map<?, ?> map = (Map<?, ?>) rawPayload;
+                LobbiesUpdatePayload payload = new LobbiesUpdatePayload();
+                
+                // Handle lobbies array with safe conversion
+                if (map.containsKey("lobbies") && map.get("lobbies") instanceof List) {
+                    List<?> rawLobbies = (List<?>) map.get("lobbies");
+                    List<Lobby> lobbies = new ArrayList<>();
+                    
+                    // Convert each object in the list to a Lobby
+                    for (Object item : rawLobbies) {
+                        if (item instanceof Lobby) {
+                            lobbies.add((Lobby) item);
+                        } else if (item instanceof Map) {
+                            Lobby lobby = convertMapToLobby((Map<?, ?>) item);
+                            if (lobby != null) {
+                                lobbies.add(lobby);
+                            }
+                        }
+                    }
+                    
+                    payload.setLobbies(lobbies);
+                }
+                
+                // Handle event string
+                if (map.containsKey("event") && map.get("event") != null) {
+                    payload.setEvent(map.get("event").toString());
+                }
+                
+                return payload;
+            } catch (Exception e) {
+                Log.e(TAG, "Error converting Map to LobbiesUpdatePayload: " + e.getMessage(), e);
+                return null;
             }
-            
-            // Handle event string
-            if (map.containsKey("event") && map.get("event") instanceof String) {
-                payload.setEvent((String) map.get("event"));
-            }
-            
-            return payload;
         }
         
+        Log.e(TAG, "Payload is neither LobbiesUpdatePayload nor Map: " + 
+              (rawPayload != null ? rawPayload.getClass().getName() : "null"));
         return null;
     }
     
     public void setLobbiesPayload(LobbiesUpdatePayload payload) {
         setPayload(payload);
+    }
+    
+    /**
+     * Helper method to convert a Map to a Lobby object
+     */
+    private Lobby convertMapToLobby(Map<?, ?> map) {
+        if (map == null) return null;
+        
+        Lobby lobby = new Lobby();
+        
+        if (map.containsKey("_id")) {
+            lobby.setLobbyId(map.get("_id").toString());
+        }
+        
+        if (map.containsKey("lobbyId")) {
+            lobby.setLobbyId(map.get("lobbyId").toString());
+        }
+        
+        if (map.containsKey("name")) {
+            lobby.setLobbyName(map.get("name").toString());
+        }
+        
+        if (map.containsKey("hostId")) {
+            lobby.setHostId(map.get("hostId").toString());
+        }
+        
+        if (map.containsKey("maxPlayers") && map.get("maxPlayers") instanceof Number) {
+            lobby.setMaxPlayers(((Number) map.get("maxPlayers")).intValue());
+        }
+        
+        if (map.containsKey("isLocked") && map.get("isLocked") instanceof Boolean) {
+            lobby.setLocked((Boolean) map.get("isLocked"));
+        }
+        
+        if (map.containsKey("numRounds") && map.get("numRounds") instanceof Number) {
+            lobby.setNumRounds(((Number) map.get("numRounds")).intValue());
+        }
+        
+        if (map.containsKey("roundDurationSeconds") && map.get("roundDurationSeconds") instanceof Number) {
+            lobby.setRoundDurationSeconds(((Number) map.get("roundDurationSeconds")).intValue());
+        }
+        
+        // Handle players list if present
+        if (map.containsKey("players") && map.get("players") instanceof List) {
+            List<?> playersList = (List<?>) map.get("players");
+            List<User> players = new ArrayList<>();
+            
+            for (Object playerObj : playersList) {
+                if (playerObj instanceof Map) {
+                    User player = convertMapToUser((Map<?, ?>) playerObj);
+                    if (player != null) {
+                        players.add(player);
+                    }
+                } else if (playerObj instanceof User) {
+                    players.add((User) playerObj);
+                }
+            }
+            lobby.setPlayers(players);
+        }
+        
+        // Handle host user if present
+        if (map.containsKey("hostUser") && map.get("hostUser") instanceof Map) {
+            User hostUser = convertMapToUser((Map<?, ?>) map.get("hostUser"));
+            lobby.setHostUser(hostUser);
+        }
+        
+        return lobby;
+    }
+    
+    /**
+     * Helper method to convert a Map to a User object
+     */
+    private User convertMapToUser(Map<?, ?> map) {
+        if (map == null) return null;
+        
+        User user = new User();
+        
+        if (map.containsKey("_id")) {
+            user.setUserId(map.get("_id").toString());
+        }
+        
+        if (map.containsKey("userId")) {
+            user.setUserId(map.get("userId").toString());
+        }
+        
+        if (map.containsKey("username")) {
+            user.setUsername(map.get("username").toString());
+        }
+        
+        if (map.containsKey("avatarUrl")) {
+            user.setAvatarUrl(map.get("avatarUrl").toString());
+        }
+        
+        return user;
     }
     
     /**

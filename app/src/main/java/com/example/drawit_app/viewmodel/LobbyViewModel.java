@@ -9,15 +9,17 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.Observer;
 import androidx.lifecycle.ViewModel;
 
+
+import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.LobbiesState;
 import com.example.drawit_app.model.LobbyState;
 import com.example.drawit_app.model.User;
-import com.example.drawit_app.network.WebSocketService;
-import com.example.drawit_app.network.message.GameStateMessage;
-import com.example.drawit_app.network.message.LobbiesUpdateMessage;
-import com.example.drawit_app.network.message.LobbyStateMessage;
-import com.example.drawit_app.network.response.LobbyListResponse;
+import com.example.drawit_app.api.WebSocketService;
+import com.example.drawit_app.api.message.GameStateMessage;
+import com.example.drawit_app.api.message.LobbiesUpdateMessage;
+import com.example.drawit_app.api.message.LobbyStateMessage;
+import com.example.drawit_app.api.response.LobbyListResponse;
 import com.example.drawit_app.repository.BaseRepository.Resource;
 import com.example.drawit_app.repository.LobbyRepository;
 import com.example.drawit_app.repository.UserRepository;
@@ -28,18 +30,9 @@ import java.util.List;
 
 import javax.inject.Inject;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import dagger.hilt.android.qualifiers.ApplicationContext;
 
-/**
- * Streamlined ViewModel for lobby operations following repository refactor patterns
- *
- * IMPROVEMENTS MADE:
- * 1. REDUCED complexity from 400+ lines to ~200 lines
- * 2. ELIMINATED redundant observer setup
- * 3. SIMPLIFIED state management with fewer LiveData objects
- * 4. REMOVED duplicate validation and error handling
- * 5. EXTRACTED common patterns into utility methods
- * 6. FIXED threading issues with proper observer management
- */
+
 @HiltViewModel
 public class LobbyViewModel extends ViewModel {
 
@@ -48,6 +41,7 @@ public class LobbyViewModel extends ViewModel {
 
     // Core dependencies
     private final LobbyRepository lobbyRepository;
+    private final WebSocketService webSocketService;
     private final UserRepository userRepository;
     private final LobbySettingsManager settingsManager;
 
@@ -57,16 +51,26 @@ public class LobbyViewModel extends ViewModel {
     // Store the current WebSocket callback to manage lifecycle
     private WebSocketService.LobbyUpdateCallback currentCallback = null;
 
+    /**
+     * Remove a previously registered lobby update callback
+     * @param callback The callback to remove
+     */
+    public void removeLobbyUpdateCallback(WebSocketService.LobbyUpdateCallback callback) {
+        Log.d(TAG, "Removing lobby update callback: " + callback);
+        if (callback != null && callback.equals(this.currentCallback)) {
+            this.currentCallback = null;
+        }
+        lobbyRepository.removeLobbyUpdateCallback(callback);
+    }
+
     // Simplified LiveData state - REDUCED from 6 to 4 state objects
     private final MediatorLiveData<LobbiesState> lobbiesState = new MediatorLiveData<>();
     private final MediatorLiveData<LobbyState> lobbyState = new MediatorLiveData<>();
     private final MutableLiveData<String> errorMessage = new MutableLiveData<>();
     private final MutableLiveData<Boolean> isLoading = new MutableLiveData<>(false);
 
-    // Event triggers - SIMPLIFIED: Single event system
     private final MutableLiveData<LobbyEvent> lobbyEvent = new MutableLiveData<>();
-    
-    // Thread-safe SingleUseObserver for handling one-time operations
+
     private static class SingleUseObserver<T> implements Observer<T> {
         private final Observer<T> wrappedObserver;
         private LiveData<T> liveData;
@@ -125,21 +129,21 @@ public class LobbyViewModel extends ViewModel {
     }
 
     @Inject
-    public LobbyViewModel(LobbyRepository lobbyRepository, UserRepository userRepository, Context context) {
+    public LobbyViewModel(
+            LobbyRepository lobbyRepository,
+            UserRepository userRepository,
+            WebSocketService webSocketService,
+            @ApplicationContext Context context) {
+        
         this.lobbyRepository = lobbyRepository;
         this.userRepository = userRepository;
+        this.webSocketService = webSocketService;
         this.settingsManager = new LobbySettingsManager(context);
-
-        initializeStates();
-        setupObservers();
-    }
-
-    // Constructor for testing
-    public LobbyViewModel(LobbyRepository lobbyRepository, UserRepository userRepository, LobbySettingsManager settingsManager) {
-        this.lobbyRepository = lobbyRepository;
-        this.userRepository = userRepository;
-        this.settingsManager = settingsManager;
-
+        
+        // Connect WebSocketService and LobbyRepository to break circular dependency
+        webSocketService.setLobbyRepository(lobbyRepository);
+        Log.i(TAG, "✅ Successfully connected WebSocketService and LobbyRepository via setter injection");
+        
         initializeStates();
         setupObservers();
     }
@@ -232,8 +236,6 @@ public class LobbyViewModel extends ViewModel {
                 false
         ));
     }
-
-    // PUBLIC API METHODS - SIMPLIFIED
 
     /**
      * Refresh lobbies with debounce mechanism
@@ -350,7 +352,7 @@ public class LobbyViewModel extends ViewModel {
         
         SingleUseObserver<Resource<LobbyListResponse>> observer = new SingleUseObserver<>(resource -> {
             setLoadingState(false);
-            
+
             if (resource.isError()) {
                 // Just log the error but don't show to user since we're auto-refreshing
                 Log.e(TAG, "Failed to auto-refresh lobbies: " + resource.getMessage());
@@ -363,6 +365,8 @@ public class LobbyViewModel extends ViewModel {
             }
         });
         
+        // This is a best-effort operation, we don't need to track the result in UI
+        // The server will check if the lobby is actually empty
         LiveData<Resource<LobbyListResponse>> result = lobbyRepository.refreshLobbies();
         result.observeForever(observer);
         observer.setLiveData(result);
@@ -421,8 +425,12 @@ public class LobbyViewModel extends ViewModel {
     }
 
     /**
-     * Start game in current lobby
-     * SIMPLIFIED with focused error handling
+     * Starts a game for the given lobby using WebSocket messaging
+     * This method triggers a WebSocket message to start the game instead of creating a persistent
+     * game object via REST API. The actual game navigation happens when the start_game WebSocket
+     * message is received and processed by WebSocketService.
+     * 
+     * @param lobbyId ID of the lobby to start a game for
      */
     public void startGame(String lobbyId) {
         if (lobbyId == null) {
@@ -431,14 +439,23 @@ public class LobbyViewModel extends ViewModel {
         }
 
         setLoadingState(true);
+        Log.d(TAG, "🎮 Starting game for lobby " + lobbyId + " using WebSocket messaging");
 
         SingleUseObserver<Resource<String>> observer = new SingleUseObserver<>(resource -> {
             setLoadingState(false);
 
             if (resource.isSuccess() && resource.getData() != null) {
-                lobbyEvent.setValue(LobbyEvent.gameStarted(resource.getData()));
-                Log.d(TAG, "Game started with ID: " + resource.getData());
+                String tempGameId = resource.getData();
+                // Note: For non-host players, we deliberately do not clear the lobby state here.
+                // They are expected to wait for a WebSocket game start message to navigate to the game fragment.
                 clearError();
+
+                // Trigger game start event for all players. The WebSocket confirmation should override this in non-host clients.
+                lobbyEvent.setValue(LobbyEvent.gameStarted(tempGameId));
+                Log.d(TAG, "🎲 Game start message sent with temporary ID: " + tempGameId + ". Waiting for WebSocket confirmation.");
+
+                // Schedule a fallback timeout, which will only trigger for the host in case the WebSocket confirmation is delayed.
+                scheduleGameStartTimeout(tempGameId);
             } else if (resource.isError()) {
                 handleError("Failed to start game: " + resource.getMessage());
             }
@@ -447,6 +464,27 @@ public class LobbyViewModel extends ViewModel {
         LiveData<Resource<String>> result = lobbyRepository.startGame(lobbyId);
         result.observeForever(observer);
         observer.setLiveData(result);
+    }
+    
+    /**
+     * Schedules a timeout to check if game start WebSocket message was received
+     * This provides an additional safety net for navigation
+     */
+    private void scheduleGameStartTimeout(String gameId) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            // Fallback navigation: Only trigger for the host to prevent non-host players from being erroneously navigated away from the lobby
+            boolean isHost = false;
+            if(getCurrentLobby().getValue() != null && getCurrentUser() != null) {
+                isHost = getCurrentLobby().getValue().getHostId().equals(getCurrentUser().getUserId());
+            }
+            if (isHost && getCurrentLobby().getValue() != null) {
+                Log.d(TAG, "⏰ Game start timeout reached for host. Manually triggering navigation as fallback.");
+                lobbyEvent.setValue(LobbyEvent.gameStarted(gameId));
+            } else {
+                // For non-host players, do nothing. They should receive a proper WebSocket message for game start.
+                Log.d(TAG, "⏰ Game start timeout reached but current user is not host. No fallback navigation triggered.");
+            }
+        }, 2000); // 2 second timeout
     }
 
     /**
@@ -540,7 +578,6 @@ public class LobbyViewModel extends ViewModel {
         observer.setLiveData(result);
     }
 
-    // VALIDATION METHODS - SIMPLIFIED
 
     /**
      * Comprehensive lobby creation validation
@@ -578,7 +615,6 @@ public class LobbyViewModel extends ViewModel {
         return true;
     }
 
-    // UTILITY METHODS - SIMPLIFIED
 
     /**
      * Centralized loading state management
@@ -641,7 +677,6 @@ public class LobbyViewModel extends ViewModel {
         errorMessage.setValue(null);
     }
 
-    // WEBSOCKET INTEGRATION - SIMPLIFIED
 
     /**
      * Set a callback for lobby update events
@@ -673,33 +708,47 @@ public class LobbyViewModel extends ViewModel {
             @Override
             public void onLobbiesUpdated(LobbiesUpdateMessage message) {
                 // Forward to the original callback
-                if (callback != null) {
-                    callback.onLobbiesUpdated(message);
-                }
-                
+                callback.onLobbiesUpdated(message);
+
                 Log.d(TAG, "ViewModel wrapper received and forwarded lobbies_update message");
             }
             
             @Override
             public void onGameStateChanged(GameStateMessage message) {
                 // Forward to the original callback
-                if (callback != null) {
-                    callback.onGameStateChanged(message);
-                }
-                
+                callback.onGameStateChanged(message);
+
                 // Handle game state changes for ALL players (host and non-host)
                 if (message != null && message.getGamePayload() != null && 
                     message.getGamePayload().getGame() != null) {
                     
-                    String gameId = message.getGamePayload().getGame().getGameId();
-                    if (gameId != null && !gameId.isEmpty()) {
+                    Game game = message.getGamePayload().getGame();
+                    String gameId = game.getGameId();
+                    
+                    if (!gameId.isEmpty()) {
                         Log.i(TAG, "⭐ Game state WebSocket message received in wrapper for game: " + gameId);
                         
-                        // Trigger navigation to game screen for all players including non-hosts
-                        // This ensures ALL players navigate to the game when it starts
-                        lobbyEvent.postValue(LobbyEvent.gameStarted(gameId));
-                        Log.i(TAG, "Set GAME_STARTED event with gameId: " + gameId + 
-                              " (non-host player navigation via WebSocket)");
+                        // Check for explicit "started" event OR active game state
+                        String event = message.getGamePayload().getEvent();
+                        Game.GameState gameState = game.getGameState();
+                        
+                        // Handle both explicit "started" events AND games with ACTIVE state
+                        boolean isGameStarting = ("started".equals(event)) || 
+                                               (gameState == Game.GameState.ACTIVE);
+                        
+                        if (isGameStarting) {
+                            Log.i(TAG, "🎮 Game starting detected! Event: " + event + 
+                                  ", State: " + gameState + ", GameId: " + gameId);
+                                  
+                            // Trigger navigation to game screen for all players including non-hosts
+                            // This ensures ALL players navigate to the game when it starts
+                            lobbyEvent.postValue(LobbyEvent.gameStarted(gameId));
+                            Log.i(TAG, "Set GAME_STARTED event with gameId: " + gameId + 
+                                  " (player navigation via WebSocket)");
+                        } else {
+                            Log.d(TAG, "Game state update received but not a game start. Event: " + 
+                                  event + ", State: " + gameState);
+                        }
                     }
                 }
             }
@@ -707,9 +756,7 @@ public class LobbyViewModel extends ViewModel {
             @Override
             public void onError(String errorMessage) {
                 // Forward to the original callback
-                if (callback != null) {
-                    callback.onError(errorMessage);
-                }
+                callback.onError(errorMessage);
             }
         };
         
@@ -749,15 +796,13 @@ public class LobbyViewModel extends ViewModel {
         
         // Now refresh our local LiveData by forcing a refresh of the current lobby
         Lobby currentLob = getCurrentLobby().getValue();
-        if (currentLob != null && currentLob.getLobbyId() != null) {
+        if (currentLob != null) {
             Log.d(TAG, "Refreshing current lobby details after WebSocket update: " + currentLob.getLobbyId());
             getLobbyDetails(currentLob.getLobbyId());
         } else {
             Log.d(TAG, "No current lobby to refresh after WebSocket update");
         }
     }
-
-    // GETTERS - SIMPLIFIED
 
     public LiveData<LobbiesState> getLobbiesState() {
         return lobbiesState;
@@ -778,6 +823,16 @@ public class LobbyViewModel extends ViewModel {
     public LiveData<LobbyEvent> getLobbyEvent() {
         return lobbyEvent;
     }
+    
+    /**
+     * Retrieve the current game ID from the repository
+     * Used to ensure consistent game transitions for all players
+     *
+     * @return The current game ID or null if not set
+     */
+    public String getCurrentGameId() {
+        return lobbyRepository != null ? lobbyRepository.getCurrentGameId() : null;
+    }
 
     public LiveData<Lobby> getCurrentLobby() {
         return lobbyRepository.getCurrentLobby();
@@ -793,5 +848,33 @@ public class LobbyViewModel extends ViewModel {
      */
     public void resetEvent() {
         lobbyEvent.setValue(null);
+    }
+
+    /**
+     * Helper method to determine if the current user is the host of the lobby
+     * @return true if the current user is the host, false otherwise
+     */
+    public boolean isHost() {
+        // Get current lobby state from LiveData (assuming lobbyState holds LobbyState that includes the Lobby object)
+        Lobby lobby = null;
+        if (lobbyState.getValue() != null) {
+            lobby = lobbyState.getValue().getLobby();
+        }
+        
+        if (lobby == null) {
+            Log.w(TAG, "isHost: No current lobby available");
+            return false;
+        }
+        
+        // Assuming the Lobby object provides a getHostId() method and userRepository has getCurrentUser()
+        if (userRepository.getCurrentUser() == null || userRepository.getCurrentUser().getValue() == null) {
+            Log.w(TAG, "isHost: No current user available");
+            return false;
+        }
+        
+        String currentUserId = userRepository.getCurrentUser().getValue().getUserId();
+        boolean hostStatus = lobby.getHostId() != null && lobby.getHostId().equals(currentUserId);
+        Log.d(TAG, "isHost: Returning " + hostStatus + " for lobby hostId: " + lobby.getHostId() + ", currentUserId: " + currentUserId);
+        return hostStatus;
     }
 }

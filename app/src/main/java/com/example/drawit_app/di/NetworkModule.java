@@ -1,7 +1,7 @@
 package com.example.drawit_app.di;
 
-import com.example.drawit_app.network.ApiService;
-import com.example.drawit_app.network.WebSocketService;
+import com.example.drawit_app.api.ApiService;
+import com.example.drawit_app.api.WebSocketService;
 import com.squareup.moshi.Moshi;
 
 import java.util.concurrent.Executors;
@@ -154,15 +154,16 @@ public class NetworkModule {
     }
     
     /**
-     * Provides a WebSocketService instance
-     * Note: This returns a stub instance that will be configured properly
-     * when needed by repositories with the actual auth token and callbacks
+     * Provides a WebSocketService instance without LobbyRepository to break circular dependency
+     * LobbyRepository will be injected later via setter
+     * 
+     * @param client The OkHttpClient for network requests
      */
     @Provides
     @Singleton
     public static WebSocketService provideWebSocketService(OkHttpClient client) {
-        // Return a stub instance with the URL but no auth token or callback yet
-        // These will be set when the service is actually used
         return new WebSocketService(WS_URL, null, null);
     }
+    
+
 }

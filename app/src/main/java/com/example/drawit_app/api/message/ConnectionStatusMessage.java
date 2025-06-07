@@ -1,4 +1,4 @@
-package com.example.drawit_app.network.message;
+package com.example.drawit_app.api.message;
 
 import com.squareup.moshi.Json;
 

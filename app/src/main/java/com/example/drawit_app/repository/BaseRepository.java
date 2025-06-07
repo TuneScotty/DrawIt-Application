@@ -3,8 +3,8 @@ package com.example.drawit_app.repository;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
-import com.example.drawit_app.network.response.ApiResponse;
-import com.example.drawit_app.network.response.LobbyListResponse;
+import com.example.drawit_app.api.response.ApiResponse;
+import com.example.drawit_app.api.response.LobbyListResponse;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -65,20 +65,20 @@ public abstract class BaseRepository {
         }
         android.util.Log.d("APICall", "=================================");
         
-        call.enqueue(new Callback<ApiResponse<T>>() {
+        call.enqueue(new Callback<>() {
             @Override
             public void onResponse(Call<ApiResponse<T>> call, Response<ApiResponse<T>> response) {
                 android.util.Log.d("APICall", "Response code: " + response.code());
                 android.util.Log.d("APICall", "Response message: " + response.message());
                 android.util.Log.d("APICall", "Is successful: " + response.isSuccessful());
                 android.util.Log.d("APICall", "Has body: " + (response.body() != null));
-                
+
                 if (response.isSuccessful() && response.body() != null) {
                     ApiResponse<T> apiResponse = response.body();
                     android.util.Log.d("APICall", "API success: " + apiResponse.isSuccess());
                     android.util.Log.d("APICall", "API message: " + apiResponse.getMessage());
                     android.util.Log.d("APICall", "API has data: " + apiResponse.hasData());
-                    
+
                     if (apiResponse.isSuccess()) {
                         // Success case - pass the data (may be null)
                         // Use postValue since this callback runs on a background thread
@@ -110,7 +110,7 @@ public abstract class BaseRepository {
                     } catch (Exception e) {
                         android.util.Log.d("APICall", "Failed to read error body");
                     }
-                    
+
                     // Check for expired token (HTTP 403)
                     if (response.code() == 403 && !isRetry) {
                         android.util.Log.d("APICall", "Received 403 (Forbidden) - possibly expired token");
@@ -122,7 +122,7 @@ public abstract class BaseRepository {
                     }
                 }
             }
-            
+
             @Override
             public void onFailure(Call<ApiResponse<T>> call, Throwable t) {
                 android.util.Log.d("APICall", "Call failed: " + t.getMessage());

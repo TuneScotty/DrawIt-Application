@@ -152,6 +152,14 @@ public class GameViewModel extends ViewModel {
     }
     
     /**
+     * Send a notification to the server that the current user correctly guessed the word
+     * @param gameId The ID of the current game
+     */
+    public void sendCorrectGuess(String gameId) {
+        gameRepository.sendCorrectGuess(gameId);
+    }
+    
+    /**
      * Update the drawing path for the current game
      * @param gameId The game ID
      * @param pathsJson JSON representation of the paths

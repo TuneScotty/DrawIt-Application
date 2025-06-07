@@ -52,6 +52,7 @@ dependencies {
     implementation libs.room.common.jvm
     implementation libs.firebase.crashlytics.buildtools
     implementation libs.play.services.games
+    implementation libs.firebase.firestore
     annotationProcessor libs.room.compiler
     testImplementation libs.room.testing
     

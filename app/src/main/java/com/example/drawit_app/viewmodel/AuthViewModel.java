@@ -6,8 +6,8 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.Observer;
 import androidx.lifecycle.ViewModel;
 
-import com.example.drawit_app.network.response.ApiResponse;
-import com.example.drawit_app.network.response.AuthResponse;
+import com.example.drawit_app.api.response.ApiResponse;
+import com.example.drawit_app.api.response.AuthResponse;
 
 import com.example.drawit_app.model.User;
 import com.example.drawit_app.repository.BaseRepository.Resource;
@@ -34,7 +34,7 @@ public class AuthViewModel extends ViewModel {
     private final MutableLiveData<String> emailError = new MutableLiveData<>();
     
     // Direct access to login API response
-    private MutableLiveData<ApiResponse<AuthResponse>> directLoginResponse = new MutableLiveData<>();
+    private final MutableLiveData<ApiResponse<AuthResponse>> directLoginResponse = new MutableLiveData<>();
     
     @Inject
     public AuthViewModel(UserRepository userRepository) {
@@ -374,14 +374,7 @@ public class AuthViewModel extends ViewModel {
             authState.setValue(new AuthState(false, null, "Login failed: " + e.getMessage(), false));
         }
     }
-    
-    /**
-     * Get direct login response
-     */
-    public LiveData<ApiResponse<AuthResponse>> getDirectLoginResponse() {
-        return directLoginResponse;
-    }
-    
+
     /**
      * Logout the current user
      */
@@ -428,77 +421,7 @@ public class AuthViewModel extends ViewModel {
             authState.removeSource(result);
         });
     }
-    
-    /**
-     * Validate registration form inputs
-     */
-    private boolean validateRegistrationForm(String username, String password, String confirmPassword, String email) {
-        boolean isValid = true;
-        
-        // Username validation
-        if (username == null || username.trim().isEmpty()) {
-            usernameError.setValue("Username is required");
-            isValid = false;
-        } else if (username.length() < 3) {
-            usernameError.setValue("Username must be at least 3 characters");
-            isValid = false;
-        } else {
-            usernameError.setValue(null);
-        }
-        
-        // Password validation
-        if (password == null || password.trim().isEmpty()) {
-            passwordError.setValue("Password is required");
-            isValid = false;
-        } else if (password.length() < 6) {
-            passwordError.setValue("Password must be at least 6 characters");
-            isValid = false;
-        } else if (!password.equals(confirmPassword)) {
-            passwordError.setValue("Passwords do not match");
-            isValid = false;
-        } else {
-            passwordError.setValue(null);
-        }
-        
-        // Email validation
-        if (email == null || email.trim().isEmpty()) {
-            emailError.setValue("Email is required");
-            isValid = false;
-        } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            emailError.setValue("Invalid email format");
-            isValid = false;
-        } else {
-            emailError.setValue(null);
-        }
-        
-        return isValid;
-    }
-    
-    /**
-     * Validate login form inputs
-     */
-    private boolean validateLoginForm(String username, String password) {
-        boolean isValid = true;
-        
-        // Username validation
-        if (username == null || username.trim().isEmpty()) {
-            usernameError.setValue("Username is required");
-            isValid = false;
-        } else {
-            usernameError.setValue(null);
-        }
-        
-        // Password validation
-        if (password == null || password.trim().isEmpty()) {
-            passwordError.setValue("Password is required");
-            isValid = false;
-        } else {
-            passwordError.setValue(null);
-        }
-        
-        return isValid;
-    }
-    
+
     /**
      * Validate profile form inputs
      */
@@ -526,35 +449,11 @@ public class AuthViewModel extends ViewModel {
         
         return isValid;
     }
-    
-    /**
-     * Get authentication state as LiveData for UI to observe
-     */
-    public LiveData<AuthState> getAuthState() {
-        return authState;
+
+    public MutableLiveData<ApiResponse<AuthResponse>> getDirectLoginResponse() {
+        return directLoginResponse;
     }
-    
-    /**
-     * Get username error as LiveData for UI to observe
-     */
-    public LiveData<String> getUsernameError() {
-        return usernameError;
-    }
-    
-    /**
-     * Get password error as LiveData for UI to observe
-     */
-    public LiveData<String> getPasswordError() {
-        return passwordError;
-    }
-    
-    /**
-     * Get email error as LiveData for UI to observe
-     */
-    public LiveData<String> getEmailError() {
-        return emailError;
-    }
-    
+
     /**
      * Class representing the authentication state
      */

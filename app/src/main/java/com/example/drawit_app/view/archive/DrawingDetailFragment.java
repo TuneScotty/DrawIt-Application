@@ -38,7 +38,6 @@ public class DrawingDetailFragment extends Fragment {
 
     private FragmentDrawingDetailBinding binding;
     private DrawingViewModel drawingViewModel;
-    private NavController navController;
     private String drawingId;
     private Drawing currentDrawing;
     
@@ -52,8 +51,8 @@ public class DrawingDetailFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        
-        navController = Navigation.findNavController(view);
+
+        NavController navController = Navigation.findNavController(view);
         drawingViewModel = new ViewModelProvider(requireActivity()).get(DrawingViewModel.class);
         
         // Get drawing ID from arguments

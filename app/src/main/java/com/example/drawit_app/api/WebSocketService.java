@@ -1,27 +1,30 @@
-package com.example.drawit_app.network;
+package com.example.drawit_app.api;
 
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import com.example.drawit_app.model.Drawing;
+import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
+import com.example.drawit_app.api.message.ConnectionStatusMessage;
+import com.example.drawit_app.api.message.GameStateMessage;
+import com.example.drawit_app.api.message.LobbiesUpdateMessage;
+import com.example.drawit_app.api.message.LobbyStateMessage;
+import com.example.drawit_app.api.message.WebSocketMessage;
 import com.example.drawit_app.model.User;
-import com.example.drawit_app.network.message.ConnectionStatusMessage;
-import com.example.drawit_app.network.message.GameStateMessage;
-import com.example.drawit_app.network.message.LobbiesUpdateMessage;
-import com.example.drawit_app.network.message.LobbyStateMessage;
-import com.example.drawit_app.network.message.WebSocketMessage;
+import com.example.drawit_app.repository.LobbyRepository;
 import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
+import com.squareup.moshi.Types;
 import com.squareup.moshi.adapters.PolymorphicJsonAdapterFactory;
 
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import java.lang.reflect.Type;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -48,6 +51,10 @@ public class WebSocketService {
     private LobbyUpdateCallback lobbyUpdateCallback;
     private GameUpdateCallback gameUpdateCallback;
     private String currentLobbyId = null;
+    private String activeGameId = null;
+    private String pendingGameId = null;
+    private String currentUserId = null; // New field for current user id
+    private com.example.drawit_app.repository.LobbyRepository lobbyRepository = null;
 
     // Connection state tracking
     private boolean isConnected = false;
@@ -98,6 +105,7 @@ public class WebSocketService {
         this.wsUrl = wsUrl;
         this.authToken = authToken;
         this.callback = callback;
+        // lobbyRepository will be set later via setter to avoid circular dependency
 
         this.moshi = new Moshi.Builder()
                 .add(PolymorphicJsonAdapterFactory.of(WebSocketMessage.class, "type")
@@ -124,35 +132,40 @@ public class WebSocketService {
 
             @Override
             public void onMessage(WebSocket webSocket, String text) {
-                try {
-                    String messageType = messageConverter.extractMessageType(text);
-                    Log.d(TAG, "WebSocket message received: " + messageType);
+                Log.d(TAG, "WebSocket message received: " + text);
 
-                    switch (messageType) {
+                try {
+                    JSONObject jsonObject = new JSONObject(text);
+                    String type = jsonObject.optString("type", "");
+
+                    switch (type) {
                         case "lobby_state":
                             handleLobbyStateMessage(text);
                             break;
-
                         case "lobbies_update":
                             handleLobbiesUpdateMessage(text);
                             break;
-
                         case "game_state":
                             handleGameStateMessage(text);
                             break;
-
                         case "connection_established":
                             handleConnectionEstablishedMessage(text);
                             break;
-
                         case "drawing_update":
                             handleDrawingUpdateMessage(text);
                             break;
-
-                        default:
-                            Log.w(TAG, "Unknown message type: " + messageType);
-                            notifyError("Unknown message type: " + messageType);
+                        case "start_game":
+                            handleStartGameMessage(text);
                             break;
+                        case "error":
+                            handleErrorMessage(text);
+                            break;
+                        case "lobby_joined":
+                            handleLobbyJoinedMessage(text);
+                            break;
+                        default:
+                            Log.w(TAG, "Unknown message type: " + type);
+                            notifyError("Unknown message type: " + type);
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to process WebSocket message: " + e.getMessage());
@@ -219,7 +232,7 @@ public class WebSocketService {
                             List<Lobby> lobbies = message.getLobbiesPayload().getLobbies();
                             for (Lobby lobby : lobbies) {
                                 if (currentLobbyId.equals(lobby.getLobbyId())) {
-                                    lobbyUpdateCallback.onLobbyStateChanged(new LobbyStateMessage(lobby));
+                                    lobbyUpdateCallback.onLobbyStateChanged(new LobbyStateMessage());
                                     break;
                                 }
                             }
@@ -232,6 +245,7 @@ public class WebSocketService {
             }
 
             // Process game state messages and notify all relevant callbacks
+            // Enhanced to ensure reliable delivery, especially for game start events
             private void handleGameStateMessage(String json) {
                 try {
                     GameStateMessage message = messageConverter.parseGameStateMessage(json);
@@ -241,22 +255,291 @@ public class WebSocketService {
                         return;
                     }
 
-                    // Notify all relevant callbacks
-                    if (callback != null) {
-                        callback.onGameStateChanged(message);
+                    // Check if this is a game start or end event - these are critical for synchronization
+                    boolean isGameStart;
+                    boolean isGameEnd = false;
+                    String gameId;
+                    String lobbyId = null;
+                    
+                    if (message.getGamePayload() != null) {
+                        // Get event type
+                        String event = message.getGamePayload().getEvent();
+                        
+                        // Get game ID and lobby ID from Game object if available
+                        if (message.getGamePayload().getGame() != null) {
+                            Game game = message.getGamePayload().getGame();
+                            gameId = game.getGameId();
+                            lobbyId = game.getLobbyId();
+                            
+                            // CRITICAL FIX: Ensure game is properly initialized
+                            // This is a backup check in case the WebSocketMessageConverter didn't handle it
+                            if (game.getCurrentDrawer() == null && game.getPlayers() != null && !game.getPlayers().isEmpty()) {
+                                // If no drawer is set but we have players, select the first player as drawer
+                                User firstPlayer = game.getPlayers().get(0);
+                                game.setCurrentDrawer(firstPlayer);
+                                game.setCurrentDrawerId(firstPlayer.getUserId());
+                                Log.d(TAG, "🎨 WebSocketService setting first player as drawer: " + 
+                                      firstPlayer.getUsername() + " (" + firstPlayer.getUserId() + ")");
+                                
+                                // Also set word to guess if missing
+                                if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
+                                    game.setCurrentWord("apple"); // Default word
+                                    Log.d(TAG, "📝 WebSocketService setting default word to guess: 'apple'");
+                                }
+                            }
+                            
+                            // Make sure current round is set
+                            if (game.getCurrentRound() <= 0) {
+                                game.setCurrentRound(1);
+                                Log.d(TAG, "🔢 WebSocketService setting current round to 1");
+                            }
+                            
+                            // Make sure total rounds is set
+                            if (game.getTotalRounds() <= 0) {
+                                game.setTotalRounds(3); // Default to 3 rounds
+                                Log.d(TAG, "🔢 WebSocketService setting total rounds to default (3)");
+                            }
+                            
+                            // Initialize player scores if missing
+                            if (game.getPlayerScores() == null || game.getPlayerScores().isEmpty()) {
+                                Map<String, Float> playerScores = new HashMap<>();
+                                // Initialize scores for all players
+                                if (game.getPlayers() != null) {
+                                    for (User player : game.getPlayers()) {
+                                        playerScores.put(player.getUserId(), 0.0f);
+                                    }
+                                    Log.d(TAG, "💯 WebSocketService initialized scores for " + 
+                                          game.getPlayers().size() + " players");
+                                }
+                                game.setPlayerScores(playerScores);
+                            }
+                            
+                            // Log the game state for debugging
+                            Log.d(TAG, "🎮 Game state: ID=" + gameId + 
+                                  ", Drawer=" + (game.getCurrentDrawer() != null ? 
+                                                game.getCurrentDrawer().getUsername() : "null") +
+                                  ", Word=" + game.getCurrentWord() +
+                                  ", Round=" + game.getCurrentRound() + "/" + game.getTotalRounds());
+                        } else {
+                            gameId = null;
+                        }
+
+                        // Identify event type
+                        isGameStart = event != null && event.equals("started");
+                        isGameEnd = event != null && (event.equals("ended") || event.equals("finished"));
+                        
+                        // CRITICAL FIX: Handle missing game start events by detecting active games for our lobby
+                        if (gameId != null && !isGameEnd && currentLobbyId != null && lobbyId != null && 
+                            currentLobbyId.equals(lobbyId) && (activeGameId == null || !activeGameId.equals(gameId))) {
+                            
+                            Log.w(TAG, "⚠️ Detected potential recovery scenario: Game " + gameId + " for our lobby " + lobbyId);
+                            
+                            // Treat this as a start event to trigger UI transition
+                            isGameStart = true;
+                            
+                            // Track as active game
+                            activeGameId = gameId;
+                            
+                            // If this was previously pending, clear the pending flag
+                            if (pendingGameId != null && pendingGameId.equals(gameId)) {
+                                Log.d(TAG, "✓ Clearing pendingGameId as we're now handling it");
+                                pendingGameId = null;
+                            }
+                        }
+                    } else {
+                        gameId = null;
+                        isGameStart = false;
                     }
 
-                    if (gameUpdateCallback != null) {
-                        gameUpdateCallback.onGameStateChanged(message);
+                    if (isGameStart) {
+                        Log.i(TAG, "📢 CRITICAL GAME START EVENT received for game " + gameId + ", dispatching to ALL listeners");
+                        
+                        // For game start events, ensure extra logging and send through ALL available channels
+                        Log.d(TAG, "📱 WebSocket callback registration status - General: " + (callback != null ? "registered" : "NULL") + 
+                              ", Game: " + (gameUpdateCallback != null ? "registered" : "NULL") +
+                              ", Lobby: " + (lobbyUpdateCallback != null ? "registered" : "NULL"));
+                    } else if (isGameEnd) {
+                        Log.i(TAG, "🎵 GAME END EVENT received for game " + gameId + ", lobby " + lobbyId + ", will reset inGame state");
+                        
+                        // Reset inGame flag on the lobby when game ends
+                        if (lobbyId != null && WebSocketService.this.lobbyRepository != null) {
+                            try {
+                                Log.d(TAG, "Resetting inGame state for lobby " + lobbyId);
+                                WebSocketService.this.lobbyRepository.setLobbyInGameState(lobbyId, false);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error resetting lobby inGame state: " + e.getMessage(), e);
+                            }
+                        } else {
+                            Log.w(TAG, "Cannot reset inGame state: " + 
+                                  (lobbyId == null ? "Missing lobby ID" : "LobbyRepository not initialized"));
+                        }
                     }
 
-                    // Also notify lobby callback for lobby-to-game transitions
-                    if (lobbyUpdateCallback != null) {
-                        lobbyUpdateCallback.onGameStateChanged(message);
-                    }
+                    // Create a flag to track if any callbacks were notified
+                    final boolean[] anyCallbacksNotified = {false};
+                    
+                    // Run notifications on main thread to avoid UI thread issues
+                    Handler mainHandler = new Handler(Looper.getMainLooper());
+                    boolean finalIsGameStart = isGameStart;
+                    mainHandler.post(() -> {
+                        if (finalIsGameStart && lobbyUpdateCallback != null) {
+                            try {
+                                Log.d(TAG, "🚨 PRIORITY notification to lobby callback for game state");
+                                lobbyUpdateCallback.onGameStateChanged(message);
+                                anyCallbacksNotified[0] = true;
+                                
+                                // If this was a recovery from a missed start_game message,
+                                // update tracking variables
+                                if (pendingGameId != null && pendingGameId.equals(gameId)) {
+                                    pendingGameId = null;
+                                    Log.d(TAG, "✅ Successfully handled pending game transition for " + gameId);
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error in lobby callback for game start: " + e.getMessage(), e);
+                            }
+                        }
+                        
+                        // Then notify general callback
+                        if (callback != null) {
+                            try {
+                                Log.d(TAG, "Notifying general WebSocket callback of game state event");
+                                callback.onGameStateChanged(message);
+                                anyCallbacksNotified[0] = true;
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error in general callback for game state: " + e.getMessage(), e);
+                            }
+                        }
+
+                        if (gameUpdateCallback != null) {
+                            try {
+                                Log.d(TAG, "Notifying game update callback of game state event");
+                                gameUpdateCallback.onGameStateChanged(message);
+                                anyCallbacksNotified[0] = true;
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error in game callback for game state: " + e.getMessage(), e);
+                            }
+                        }
+
+                        // For critical game start events, retry if no callbacks were successfully notified
+                        // or retry anyway for extra reliability with game start events
+                        if (finalIsGameStart) {
+                            if (!anyCallbacksNotified[0]) {
+                                Log.w(TAG, "⚠️ No callbacks successfully processed game start event! Retrying in 500ms");
+                                mainHandler.postDelayed(() -> handleGameStateMessage(json), 500);
+                            } else {
+                                // Even if callbacks were notified, schedule one retry for reliability
+                                Log.d(TAG, "🔄 Scheduling one extra delivery attempt for game start event");
+                                mainHandler.postDelayed(() -> {
+                                    // Only retry if we're still connected
+                                    if (isConnected && lobbyUpdateCallback != null) {
+                                        Log.d(TAG, "🔁 Performing extra delivery attempt for game start event");
+                                        try {
+                                            lobbyUpdateCallback.onGameStateChanged(message);
+                                        } catch (Exception ignored) {}
+                                    }
+                                }, 1000); // Wait 1 second before retry
+                            }
+                        }
+                    });
                 } catch (Exception e) {
-                    Log.e(TAG, "Error processing game_state message: " + e.getMessage());
+                    Log.e(TAG, "Error processing game_state message: " + e.getMessage(), e);
                     notifyError("Error processing game_state message: " + e.getMessage());
+                }
+            }
+            
+            /**
+             * Process start_game WebSocket messages
+             * Converts the start_game message to a GameStateMessage and ensures
+             * proper transition to game screen for ALL players
+             */
+            private void handleStartGameMessage(String json) {
+                Log.d(TAG, "Processing start_game message");
+
+                // Convert the start_game message to a GameStateMessage
+                GameStateMessage gameStateMessage = messageConverter.createGameStateFromStartGameMessage(json);
+
+                if (gameStateMessage == null) {
+                    Log.e(TAG, "Failed to convert start_game message to GameStateMessage");
+                    notifyError("Failed to process start game message");
+                    return;
+                }
+
+                // Extract game ID and game object
+                String gameId = "unknown";
+                Game game = null;
+                if (gameStateMessage.getGamePayload() != null && gameStateMessage.getGamePayload().getGame() != null) {
+                    game = gameStateMessage.getGamePayload().getGame();
+                    gameId = game.getGameId();
+                }
+
+                // If current user is the host, perform duplicate check using pendingGameId
+                if (game != null && game.getHostId() != null && currentUserId != null && currentUserId.equals(game.getHostId())) {
+                    if (pendingGameId != null && pendingGameId.equals(gameId)) {
+                        Log.d(TAG, "Host: Game start already processed for game id " + gameId + ", ignoring duplicate");
+                        return;
+                    }
+                } else {
+                    // Non-host: always process the game start message even if duplicate
+                    Log.d(TAG, "Non-host processing game start message (duplicate check bypassed)");
+                }
+
+                // Store the game id to prevent duplicate processing for hosts
+                pendingGameId = gameId;
+
+                // Set game state to ACTIVE and ensure valid round number
+                if (game != null) {
+                    game.setGameState(Game.GameState.ACTIVE);
+                    
+                    // Ensure valid round number
+                    if (gameStateMessage.getGamePayload().getRoundNumber() <= 0) {
+                        Log.w(TAG, "Round number is <= 0, setting default round number to 1");
+                        gameStateMessage.getGamePayload().setCurrentRound(1);
+                    }
+                    
+                    // Ensure max rounds is set
+                    if (gameStateMessage.getGamePayload().getMaxRounds() <= 0) {
+                        Log.w(TAG, "Max rounds is <= 0, setting default max rounds to 3");
+                        gameStateMessage.getGamePayload().setMaxRounds(3);
+                    }
+                    
+                    // Ensure time remaining is set
+                    if (gameStateMessage.getGamePayload().getTimeRemainingSeconds() <= 0) {
+                        Log.w(TAG, "Time remaining is <= 0, setting default time to 60 seconds");
+                        gameStateMessage.getGamePayload().setTimeRemainingSeconds(60);
+                    }
+                    
+                    // Ensure current drawer is set
+                    if (gameStateMessage.getGamePayload().getCurrentDrawer() == null) {
+                        Log.w(TAG, "Current drawer is null, setting host as drawer");
+                        // Create a User object directly
+                        com.example.drawit_app.model.User hostUser = new com.example.drawit_app.model.User();
+                        hostUser.setUserId(game.getHostId());
+                        hostUser.setUsername("Host");
+                        gameStateMessage.getGamePayload().setCurrentDrawer(hostUser);
+                    }
+                    
+                    // Set word to guess if not already set
+                    if (gameStateMessage.getGamePayload().getWordToGuess() == null || 
+                        gameStateMessage.getGamePayload().getWordToGuess().isEmpty()) {
+                        gameStateMessage.getGamePayload().setWordToGuess("apple"); // Default word
+                        Log.w(TAG, "Word to guess is empty, setting default word");
+                    }
+                    
+                    // Log detailed game state for debugging
+                    Log.d(TAG, "Game state prepared - GameID: " + gameId + 
+                          ", Round: " + gameStateMessage.getGamePayload().getCurrentRound() + 
+                          "/" + gameStateMessage.getGamePayload().getMaxRounds() + 
+                          ", Time: " + gameStateMessage.getGamePayload().getTimeRemainingSeconds() + 
+                          ", Drawer: " + (gameStateMessage.getGamePayload().getCurrentDrawer() != null ? 
+                                        gameStateMessage.getGamePayload().getCurrentDrawer().getUserId() : "null"));
+                }
+
+                // Callback: Notify game state update for all players
+                if (gameUpdateCallback != null) {
+                    gameUpdateCallback.onGameStateChanged(gameStateMessage);
+                    Log.d(TAG, "Game state update sent to callback");
+                } else {
+                    Log.w(TAG, "Game update callback is null, cannot propagate game state update");
                 }
             }
 
@@ -281,22 +564,112 @@ public class WebSocketService {
 
             // Process drawing update messages
             private void handleDrawingUpdateMessage(String json) {
-                // Placeholder for future implementation
+                try {
+                    Log.d(TAG, "Received drawing update message: " + json);
+                    
+                    // Parse the message
+                    Type mapType = Types.newParameterizedType(Map.class, String.class, Object.class);
+                    JsonAdapter<Map<String, Object>> adapter = moshi.adapter(mapType);
+                    Map<String, Object> messageMap = adapter.fromJson(json);
+                    
+                    if (messageMap != null) {
+                        // Extract paths JSON string
+                        String pathsJson = null;
+                        if (messageMap.containsKey("paths")) {
+                            // The paths might be a JSON object or a string
+                            Object pathsObj = messageMap.get("paths");
+                            if (pathsObj instanceof String) {
+                                pathsJson = (String) pathsObj;
+                            } else {
+                                // Convert the paths object back to JSON string
+                                pathsJson = moshi.adapter(Object.class).toJson(pathsObj);
+                            }
+                        }
+                        
+                        // Extract game ID
+                        String gameId = null;
+                        if (messageMap.containsKey("gameId")) {
+                            gameId = messageMap.get("gameId").toString();
+                        }
+                        
+                        // Notify game update callback if registered
+                        if (gameUpdateCallback != null && pathsJson != null) {
+                            // Create a game state message with the drawing paths
+                            GameStateMessage gameStateMessage = new GameStateMessage();
+                            gameStateMessage.setType("drawing_update");
+                            
+                            // Set up the game payload
+                            GameStateMessage.GamePayload payload = new GameStateMessage.GamePayload();
+                            payload.setEvent("drawing_update");
+                            payload.setDrawingPaths(pathsJson);
+                            
+                            // Set the game ID if available
+                            if (gameId != null) {
+                                Game game = new Game();
+                                game.setGameId(gameId);
+                                payload.setGame(game);
+                            }
+                            
+                            gameStateMessage.setGamePayload(payload);
+                            
+                            // Notify the callback on the main thread
+                            Handler mainHandler = new Handler(Looper.getMainLooper());
+                            mainHandler.post(() -> {
+                                gameUpdateCallback.onGameStateChanged(gameStateMessage);
+                            });
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error processing drawing update message: " + e.getMessage(), e);
+                }
+            }
+            
+            // Process error messages from server
+            private void handleErrorMessage(String json) {
+                try {
+                    JSONObject jsonObject = new JSONObject(json);
+                    String errorMessage = jsonObject.optString("message", "Unknown server error");
+                    Log.e(TAG, "Server error: " + errorMessage);
+                    
+                    // Notify callbacks about the error
+                    notifyError("Server error: " + errorMessage);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error processing error message: " + e.getMessage());
+                    notifyError("Failed to process server error message");
+                }
             }
 
-            // Notify all registered callbacks about an error
+            // Notify all registered callbacks about an error on the main thread
             private void notifyError(String errorMessage) {
-                if (callback != null) {
-                    callback.onError(errorMessage);
-                }
+                // Always run callbacks on main thread to avoid crashes when showing UI elements like Toast
+                Handler mainHandler = new Handler(Looper.getMainLooper());
+                mainHandler.post(() -> {
+                    Log.e(TAG, "WebSocket error: " + errorMessage);
+                    
+                    if (callback != null) {
+                        try {
+                            callback.onError(errorMessage);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error in main callback's error handler: " + e.getMessage(), e);
+                        }
+                    }
 
-                if (lobbyUpdateCallback != null) {
-                    lobbyUpdateCallback.onError(errorMessage);
-                }
+                    if (lobbyUpdateCallback != null) {
+                        try {
+                            lobbyUpdateCallback.onError(errorMessage);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error in lobby callback's error handler: " + e.getMessage(), e);
+                        }
+                    }
 
-                if (gameUpdateCallback != null) {
-                    gameUpdateCallback.onError(errorMessage);
-                }
+                    if (gameUpdateCallback != null) {
+                        try {
+                            gameUpdateCallback.onError(errorMessage);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error in game callback's error handler: " + e.getMessage(), e);
+                        }
+                    }
+                });
             }
 
             @Override
@@ -372,15 +745,36 @@ public class WebSocketService {
     public void disconnect() {
         reconnectEnabled = false;
         isConnected = false;
-        isConnecting = false;
-
-        reconnectHandler.removeCallbacksAndMessages(null);
-
         if (webSocket != null) {
             Log.i(TAG, "Closing WebSocket connection");
             webSocket.close(NORMAL_CLOSURE_STATUS, "Closing connection");
             webSocket = null;
         }
+        isConnected = false;
+        isConnecting = false;
+        reconnectEnabled = false; // Don't auto-reconnect after manual disconnection
+    }
+
+    /**
+     * Manually reconnect the WebSocket connection
+     * Forces a reconnection attempt even if already connected
+     */
+    public void reconnect() {
+        Log.i(TAG, "Manual reconnection requested");
+        
+        // Force disconnect if already connected
+        if (webSocket != null) {
+            webSocket.close(1000, "Reconnecting");
+            webSocket = null;
+        }
+        
+        isConnected = false;
+        isConnecting = false;
+        reconnectEnabled = true;
+        reconnectAttempts = 0;
+        
+        // Start connection process
+        connect();
     }
 
     // Attempt to reconnect to the WebSocket server with exponential backoff
@@ -452,27 +846,74 @@ public class WebSocketService {
             }
         }
     }
-
+    
     /**
-     * Leave a lobby via WebSocket
+     * Set the LobbyRepository for handling lobby state updates
+     * This method is used to break the circular dependency in the DI graph
+     * 
+     * @param repository The lobby repository instance
      */
-    public void leaveLobby(String lobbyId) {
+    public void setLobbyRepository(LobbyRepository repository) {
+        this.lobbyRepository = repository;
+        Log.d(TAG, "LobbyRepository has been set via setter");
+    }
+    
+    /**
+     * Send a raw message via WebSocket
+     *
+     * @param message the raw JSON message as a string
+     */
+    public void sendMessage(String message) {
         if (webSocket != null) {
             try {
-                // Clear current lobby ID when leaving
-                if (currentLobbyId != null && currentLobbyId.equals(lobbyId)) {
-                    setCurrentLobbyId(null);
-                }
-
-                WebSocketMessage message = new WebSocketMessage("leave_lobby",
-                        new WebSocketMessage.LobbyPayload(lobbyId));
-                String json = moshi.adapter(WebSocketMessage.class).toJson(message);
-                webSocket.send(json);
+                webSocket.send(message);
             } catch (Exception e) {
+                Log.e(TAG, "Failed to send message: " + e.getMessage(), e);
                 if (callback != null) {
-                    callback.onError("Failed to leave lobby: " + e.getMessage());
+                    callback.onError("Failed to send message: " + e.getMessage());
                 }
             }
+        } else {
+            Log.e(TAG, "Cannot send message: WebSocket is not connected");
+        }
+    }
+    
+    /**
+     * Send a game-related message via WebSocket with type and game ID
+     * Uses the WebSocketMessageConverter for consistent message formatting
+     *
+     * @param messageType the type of message (e.g., "round_complete", "correct_guess")
+     * @param gameId the ID of the game this message relates to
+     */
+    public void sendMessage(String messageType, String gameId) {
+        if (webSocket != null) {
+            try {
+                // Create a map with the message data
+                Map<String, Object> messageData = new HashMap<>();
+                messageData.put("type", messageType);
+                messageData.put("game_id", gameId);
+                
+                // Add timestamp for server validation
+                messageData.put("timestamp", System.currentTimeMillis());
+                
+                // Convert to JSON using Moshi for consistency with the rest of the app
+                JsonAdapter<Map<String, Object>> adapter = moshi.adapter(
+                    Types.newParameterizedType(Map.class, String.class, Object.class));
+                String jsonMessage = adapter.toJson(messageData);
+                
+                // Log the message being sent
+                Log.d(TAG, "📤 Sending WebSocket message: " + messageType + " for game: " + gameId);
+                
+                // Send the message
+                webSocket.send(jsonMessage);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send " + messageType + " message: " + e.getMessage(), e);
+                if (callback != null) {
+                    callback.onError("Failed to send " + messageType + " message: " + e.getMessage());
+                }
+            }
+        } else {
+            Log.e(TAG, "Cannot send " + messageType + " message: WebSocket is not connected");
         }
     }
 
@@ -507,6 +948,170 @@ public class WebSocketService {
      */
     public void setCurrentLobbyId(String lobbyId) {
         this.currentLobbyId = lobbyId;
+    }
+    
+    /**
+     * Set current user ID for context in message handling
+     */
+    public void setCurrentUserId(String userId) {
+        this.currentUserId = userId;
+        Log.d(TAG, "Current user id set to: " + userId);
+    }
+    
+    /**
+     * Join a lobby via WebSocket to ensure proper connection mapping
+     * This registers the current WebSocket connection with a specific lobby ID on the server
+     * @param lobbyId The ID of the lobby to join
+     * @param userId The ID of the user joining the lobby
+     */
+    public void joinLobby(String lobbyId, String userId) {
+        try {
+            if (!isConnected || webSocket == null) {
+                Log.e(TAG, "Cannot join lobby: WebSocket is not connected");
+                return;
+            }
+            
+            // First update the current lobby ID locally
+            setCurrentLobbyId(lobbyId);
+            
+            // Create the join_lobby message with both lobbyId AND userId
+            // This is critical for the server to properly map the connection
+            String joinMessage = String.format("{\"type\":\"join_lobby\",\"lobbyId\":\"%s\",\"userId\":\"%s\"}", 
+                                              lobbyId, userId);
+            
+            // Send the join message to the server
+            Log.i(TAG, "Sending WebSocket join_lobby message for lobby: " + lobbyId + ", user: " + userId);
+            webSocket.send(joinMessage);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send join lobby message: " + e.getMessage(), e);
+            if (callback != null) {
+                callback.onError("Failed to join lobby via WebSocket: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Leave a lobby via WebSocket
+     * This method sends a leave_lobby message to the server and handles errors gracefully
+     * 
+     * @param lobbyId The ID of the lobby to leave
+     */
+    public void leaveLobby(String lobbyId) {
+        // Skip if not connected to WebSocket
+        if (webSocket == null) {
+            Log.d(TAG, "Cannot leave lobby: WebSocket not connected");
+            return;
+        }
+        
+        // Skip if lobby ID is null or empty
+        if (lobbyId == null || lobbyId.isEmpty()) {
+            Log.d(TAG, "Cannot leave lobby: Invalid lobby ID");
+            return;
+        }
+        
+        try {
+            // Clear current lobby ID if it matches the one we're leaving
+            if (currentLobbyId != null && currentLobbyId.equals(lobbyId)) {
+                Log.d(TAG, "Clearing current lobby ID: " + lobbyId);
+                setCurrentLobbyId(null);
+            } else {
+                Log.d(TAG, "Not in lobby " + lobbyId + ", current lobby is " + 
+                        (currentLobbyId != null ? currentLobbyId : "null"));
+            }
+            
+            // Create and send the leave_lobby message
+            String leaveMessage = String.format("{\"type\":\"leave_lobby\",\"lobbyId\":\"%s\"}", lobbyId);
+            webSocket.send(leaveMessage);
+            Log.d(TAG, "Successfully sent leave_lobby message for lobby: " + lobbyId);
+        } catch (Exception e) {
+            Log.e(TAG, "Error leaving lobby: " + e.getMessage(), e);
+            // Intentionally NOT propagating this error to the UI via callback
+            // to avoid annoying error toasts
+        }
+    }
+    
+    /**
+     * Process lobby_joined message sent by the server when a client successfully joins a lobby
+     * This confirms the server has successfully mapped the WebSocket connection to the lobby
+     */
+    private void handleLobbyJoinedMessage(String json) {
+        try {
+            Log.i(TAG, "Received lobby_joined confirmation from server");
+            
+            // Parse basic info from the message
+            Type mapType = Types.newParameterizedType(Map.class, String.class, Object.class);
+            JsonAdapter<Map<String, Object>> mapAdapter = moshi.adapter(mapType);
+            Map<String, Object> messageMap = mapAdapter.fromJson(json);
+            
+            if (messageMap != null && messageMap.containsKey("payload") && messageMap.get("payload") instanceof Map) {
+                Map<String, Object> payloadMap = (Map<String, Object>) messageMap.get("payload");
+                String lobbyId = null;
+                String userId = null;
+                
+                if (payloadMap.containsKey("lobbyId")) {
+                    lobbyId = payloadMap.get("lobbyId").toString();
+                    Log.d(TAG, "Joined lobby with ID: " + lobbyId);
+                    currentLobbyId = lobbyId;
+                }
+                
+                if (payloadMap.containsKey("userId")) {
+                    userId = payloadMap.get("userId").toString();
+                    Log.d(TAG, "User with ID: " + userId + " joined lobby");
+                }
+                
+                // Create a lobby state message from this confirmation
+                LobbyStateMessage stateMessage = getLobbyStateMessage(lobbyId, userId);
+
+                // Notify callbacks on main thread
+                Handler mainHandler = new Handler(Looper.getMainLooper());
+                mainHandler.post(() -> {
+                    Log.d(TAG, "Notifying callbacks about successful lobby join");
+                    
+                    // Notify all registered callbacks
+                    if (callback != null) {
+                        try {
+                            callback.onLobbyStateChanged(stateMessage);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error notifying main callback about lobby joined: " + e.getMessage(), e);
+                        }
+                    }
+                    
+                    if (lobbyUpdateCallback != null) {
+                        try {
+                            lobbyUpdateCallback.onLobbyStateChanged(stateMessage);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error notifying lobby callback about lobby joined: " + e.getMessage(), e);
+                        }
+                    }
+                });
+                
+            } else {
+                Log.w(TAG, "Invalid lobby_joined message format");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error processing lobby_joined message: " + e.getMessage(), e);
+        }
+    }
+
+    @NonNull
+    private static LobbyStateMessage getLobbyStateMessage(String lobbyId, String userId) {
+        LobbyStateMessage stateMessage = new LobbyStateMessage();
+        stateMessage.setType("lobby_state");
+        LobbyStateMessage.LobbyPayload payload = new LobbyStateMessage.LobbyPayload();
+
+        if (lobbyId != null) {
+            Lobby lobby = new Lobby();
+            lobby.setLobbyId(lobbyId);
+            payload.setLobby(lobby);
+        }
+
+        payload.setEvent("joined");
+        if (userId != null) {
+            payload.setUserId(userId);
+        }
+
+        stateMessage.setLobbyPayload(payload);
+        return stateMessage;
     }
 
     /**

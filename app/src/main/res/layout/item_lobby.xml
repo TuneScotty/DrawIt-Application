@@ -15,27 +15,41 @@
 
         <TextView
             android:id="@+id/tv_lobby_name"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_width="175dp"
+            android:layout_height="30dp"
             android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
             android:textStyle="bold"
             app:layout_constraintEnd_toStartOf="@id/btn_join_lobby"
+            app:layout_constraintHorizontal_bias="0.0"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             tools:text="Awesome Artists" />
-            
+
         <ImageView
             android:id="@+id/iconLock"
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="60dp"
             android:contentDescription="@string/lobby_locked"
             android:src="@android:drawable/ic_lock_lock"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/tv_lobby_name"
             app:layout_constraintStart_toEndOf="@id/tv_lobby_name"
             app:layout_constraintTop_toTopOf="@id/tv_lobby_name"
+            app:layout_constraintVertical_bias="1.0"
             tools:visibility="visible" />
+
+        <ImageView
+            android:id="@+id/iconInGame"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/lobby_in_game"
+            android:src="@android:drawable/ic_media_play"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="@id/tv_lobby_name"
+            app:layout_constraintStart_toEndOf="@id/iconLock"
+            app:layout_constraintTop_toTopOf="@id/tv_lobby_name" />
 
         <TextView
             android:id="@+id/tv_host_name"
@@ -77,16 +91,6 @@
             app:layout_constraintTop_toTopOf="@id/tv_rounds"
             tools:text="Duration: 60s" />
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chip_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="12sp"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tv_player_count"
-            tools:text="Open" />
-
         <Button
             android:id="@+id/btn_join_lobby"
             style="@style/DrawIt.Button"
@@ -95,7 +99,8 @@
             android:text="@string/join_lobby"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="0.095" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </com.google.android.material.card.MaterialCardView>

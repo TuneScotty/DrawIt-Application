@@ -17,7 +17,7 @@ import com.example.drawit_app.model.User;
  * Provides access to DAOs for all entity types.
  */
 @Database(entities = {User.class, Lobby.class, Game.class, Drawing.class}, 
-        version = 1, exportSchema = false)
+        version = 3, exportSchema = false)
 @TypeConverters({DateConverter.class, GameStateConverter.class, 
         PlayerScoreConverter.class, DrawingPathsConverter.class})
 public abstract class DrawItDatabase extends RoomDatabase {

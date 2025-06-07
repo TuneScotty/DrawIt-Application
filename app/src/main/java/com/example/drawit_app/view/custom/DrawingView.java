@@ -2,11 +2,14 @@ package com.example.drawit_app.view.custom;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.util.AttributeSet;
+import android.util.Log;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -33,8 +36,7 @@ public class DrawingView extends View {
     
     private Bitmap canvasBitmap;
     private Canvas drawCanvas;
-    private Paint canvasPaint;
-    private Paint drawPaint;
+    private Paint drawPaint, canvasPaint;
     private Path currentPath;
     private float currentX, currentY;
     
@@ -42,6 +44,18 @@ public class DrawingView extends View {
     private final List<PathInfo> paths = new ArrayList<>();
     private int currentColor = DEFAULT_COLOR;
     private float currentStrokeWidth = DEFAULT_STROKE_WIDTH;
+    
+    // Advanced drawing features
+    public enum BrushType {
+        NORMAL,      // Standard brush
+        CALLIGRAPHY, // Angle-sensitive brush
+        AIRBRUSH,    // Soft edges
+        MARKER       // Thick with opacity
+    }
+    
+    private BrushType currentBrushType = BrushType.NORMAL;
+    private float currentPressure = 1.0f; // Default pressure
+    private boolean pressureSensitivityEnabled = false;
     
     // Listener for path completion
     private OnPathCompletedListener pathCompletedListener;
@@ -73,25 +87,110 @@ public class DrawingView extends View {
     private void setupPaint() {
         drawPaint.setColor(currentColor);
         drawPaint.setAntiAlias(true);
-        drawPaint.setStrokeWidth(currentStrokeWidth);
-        drawPaint.setStyle(Paint.Style.STROKE);
-        drawPaint.setStrokeJoin(Paint.Join.ROUND);
-        drawPaint.setStrokeCap(Paint.Cap.ROUND);
+        
+        // Apply pressure sensitivity if enabled
+        float effectiveStrokeWidth = pressureSensitivityEnabled ? 
+                currentStrokeWidth * currentPressure : currentStrokeWidth;
+        
+        // Configure paint based on brush type
+        switch (currentBrushType) {
+            case NORMAL:
+                drawPaint.setStrokeWidth(effectiveStrokeWidth);
+                drawPaint.setStyle(Paint.Style.STROKE);
+                drawPaint.setStrokeJoin(Paint.Join.ROUND);
+                drawPaint.setStrokeCap(Paint.Cap.ROUND);
+                drawPaint.setMaskFilter(null);
+                drawPaint.setAlpha(255);
+                break;
+                
+            case CALLIGRAPHY:
+                drawPaint.setStrokeWidth(effectiveStrokeWidth);
+                drawPaint.setStyle(Paint.Style.STROKE);
+                drawPaint.setStrokeJoin(Paint.Join.BEVEL); // Sharp corners
+                drawPaint.setStrokeCap(Paint.Cap.SQUARE); // Flat ends
+                drawPaint.setMaskFilter(null);
+                drawPaint.setAlpha(255);
+                break;
+                
+            case AIRBRUSH:
+                drawPaint.setStrokeWidth(effectiveStrokeWidth * 1.5f); // Wider stroke
+                drawPaint.setStyle(Paint.Style.STROKE);
+                drawPaint.setStrokeJoin(Paint.Join.ROUND);
+                drawPaint.setStrokeCap(Paint.Cap.ROUND);
+                // Blur effect for soft edges
+                drawPaint.setMaskFilter(new BlurMaskFilter(effectiveStrokeWidth / 2, BlurMaskFilter.Blur.NORMAL));
+                drawPaint.setAlpha(200); // Slightly transparent
+                break;
+                
+            case MARKER:
+                drawPaint.setStrokeWidth(effectiveStrokeWidth * 2f); // Much wider stroke
+                drawPaint.setStyle(Paint.Style.STROKE);
+                drawPaint.setStrokeJoin(Paint.Join.ROUND);
+                drawPaint.setStrokeCap(Paint.Cap.SQUARE); // Flat end like a marker
+                drawPaint.setMaskFilter(null);
+                drawPaint.setAlpha(180); // More transparent
+                break;
+        }
+        
+        Log.d("DrawingView", "Paint configured: brush=" + currentBrushType + 
+              ", width=" + effectiveStrokeWidth + ", color=" + currentColor);
     }
     
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         
-        // Create new bitmap and canvas with new dimensions
-        canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        drawCanvas = new Canvas(canvasBitmap);
+        // Validate dimensions before creating bitmap to prevent IllegalArgumentException
+        if (w <= 0 || h <= 0) {
+            Log.e("DrawingView", "Invalid dimensions for bitmap: w=" + w + ", h=" + h);
+            // Use minimum valid dimensions instead of returning
+            w = Math.max(1, w);
+            h = Math.max(1, h);
+            Log.d("DrawingView", "Using minimum valid dimensions: w=" + w + ", h=" + h);
+        }
+        
+        // Recycle old bitmap to prevent memory leaks
+        if (canvasBitmap != null) {
+            canvasBitmap.recycle();
+        }
+        
+        try {
+            // Create new bitmap and canvas with valid dimensions
+            canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            drawCanvas = new Canvas(canvasBitmap);
+            Log.d("DrawingView", "Created new bitmap with dimensions: w=" + w + ", h=" + h);
+        } catch (IllegalArgumentException e) {
+            Log.e("DrawingView", "Failed to create bitmap: " + e.getMessage());
+        }
     }
     
     @Override
     protected void onDraw(Canvas canvas) {
-        // Draw background bitmap
-        canvas.drawBitmap(canvasBitmap, 0, 0, canvasPaint);
+        if (canvas == null) {
+            Log.e("DrawingView", "Cannot draw - canvas is null");
+            return;
+        }
+        
+        if (canvasBitmap == null) {
+            canvas.drawColor(Color.WHITE);
+        } else {
+            try {
+                canvas.drawBitmap(canvasBitmap, 0, 0, canvasPaint);
+            } catch (Exception e) {
+                canvas.drawColor(Color.WHITE);
+
+                int w = getWidth();
+                int h = getHeight();
+                if (w > 0 && h > 0) {
+                    try {
+                        canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                        drawCanvas = new Canvas(canvasBitmap);
+                    } catch (Exception ex) {
+                        Log.e("DrawingView", "Failed to recreate bitmap: " + ex.getMessage());
+                    }
+                }
+            }
+        }
         
         // Draw all stored paths
         for (PathInfo pathInfo : paths) {
@@ -106,52 +205,68 @@ public class DrawingView extends View {
         canvas.drawPath(currentPath, drawPaint);
     }
     
+    // For improved touch handling and smoother drawing
+    private static final float TOUCH_TOLERANCE = 4f;
+    private static final int VELOCITY_FILTER_WEIGHT = 2;
+    private float lastVelocity;
+    private float lastWidth;
+    private float lastX, lastY;
+    private boolean isDrawing = false;
+    
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        // If drawing is disabled, don't process touch events
+        if (!isEnabled()) {
+            return false;
+        }
+        
         float x = event.getX();
         float y = event.getY();
         
+        // Check for pressure sensitivity support
+        if (pressureSensitivityEnabled && event.getDevice() != null) {
+            // Get pressure if available, otherwise use default
+            if (event.getDevice().getSources() == InputDevice.SOURCE_TOUCHSCREEN) {
+                float pressure = event.getPressure();
+                // Only update if we have a valid pressure reading
+                if (pressure > 0) {
+                    currentPressure = pressure;
+                    // Update paint with new pressure
+                    setupPaint();
+                    Log.d("DrawingView", "Pressure detected: " + pressure);
+                }
+            }
+        }
+        
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                // Start new path
-                currentPath = new Path();
-                currentPath.moveTo(x, y);
-                currentX = x;
-                currentY = y;
+                // Start new path with improved handling
+                isDrawing = true;
+                touchStart(x, y);
                 invalidate();
                 return true;
                 
             case MotionEvent.ACTION_MOVE:
-                // Add path segment
-                float dx = Math.abs(x - currentX);
-                float dy = Math.abs(y - currentY);
-                
-                if (dx >= 4 || dy >= 4) {
-                    // Use quadTo for smoother curves
-                    currentPath.quadTo(currentX, currentY, (x + currentX) / 2, (y + currentY) / 2);
-                    currentX = x;
-                    currentY = y;
+                // Add path segment with improved smoothing
+                if (isDrawing) {
+                    touchMove(x, y);
+                    invalidate();
                 }
-                invalidate();
                 return true;
                 
             case MotionEvent.ACTION_UP:
-                // Finish path
-                currentPath.lineTo(x, y);
-                drawCanvas.drawPath(currentPath, drawPaint);
-                
-                // Store the completed path
-                PathInfo pathInfo = new PathInfo(new Path(currentPath), currentColor, currentStrokeWidth);
-                paths.add(pathInfo);
-                
-                // Notify listener
-                if (pathCompletedListener != null) {
-                    pathCompletedListener.onPathCompleted(pathInfo);
+                // Finish path with improved handling
+                if (isDrawing) {
+                    touchUp(x, y);
+                    isDrawing = false;
+                    invalidate();
                 }
                 
-                // Reset current path
-                currentPath.reset();
-                invalidate();
+                // Reset pressure to default after drawing
+                if (pressureSensitivityEnabled) {
+                    currentPressure = 1.0f;
+                    setupPaint();
+                }
                 
                 // Call performClick for accessibility
                 performClick();
@@ -160,6 +275,83 @@ public class DrawingView extends View {
             default:
                 return false;
         }
+    }
+    
+    private void touchStart(float x, float y) {
+        // Reset path and store starting point
+        currentPath = new Path();
+        currentPath.moveTo(x, y);
+        
+        // Store points for velocity calculation
+        currentX = x;
+        currentY = y;
+        lastX = x;
+        lastY = y;
+        
+        // Reset velocity tracking
+        lastVelocity = 0;
+        lastWidth = currentStrokeWidth;
+        
+        Log.d("DrawingView", "Started drawing at x=" + x + ", y=" + y);
+    }
+    
+    private void touchMove(float x, float y) {
+        float dx = Math.abs(x - currentX);
+        float dy = Math.abs(y - currentY);
+        
+        // Only process if movement is significant
+        if (dx >= TOUCH_TOLERANCE || dy >= TOUCH_TOLERANCE) {
+            // Calculate velocity for dynamic stroke width (optional feature)
+            float velocity = (float) Math.sqrt(dx * dx + dy * dy);
+            velocity = VELOCITY_FILTER_WEIGHT * velocity + (1 - VELOCITY_FILTER_WEIGHT) * lastVelocity;
+            
+            // Use quadratic Bezier for smoother curves
+            // The midpoint becomes the end point of the curve, and the current point is the control point
+            currentPath.quadTo(currentX, currentY, (x + currentX) / 2, (y + currentY) / 2);
+            
+            // Update points for next iteration
+            lastX = currentX;
+            lastY = currentY;
+            currentX = x;
+            currentY = y;
+            lastVelocity = velocity;
+            
+            // For debugging
+            if (Math.random() < 0.01) { // Log only 1% of points to avoid spam
+                Log.d("DrawingView", "Drawing curve to x=" + x + ", y=" + y);
+            }
+        }
+    }
+    
+    private void touchUp(float x, float y) {
+        // Connect the final point
+        currentPath.lineTo(x, y);
+        
+        // Draw the path to the canvas
+        if (drawCanvas != null) {
+            drawCanvas.drawPath(currentPath, drawPaint);
+        } else {
+            Log.e("DrawingView", "Cannot draw - drawCanvas is null");
+        }
+        
+        // Store the completed path
+        PathInfo pathInfo = new PathInfo(new Path(currentPath), currentColor, currentStrokeWidth);
+        paths.add(pathInfo);
+        
+        // Notify listener for real-time updates
+        if (pathCompletedListener != null) {
+            pathCompletedListener.onPathCompleted(pathInfo);
+        }
+        
+        // Update paths JSON for network sync
+        if (pathUpdateListener != null) {
+            pathUpdateListener.onPathUpdated(getPathsAsJson());
+        }
+        
+        // Reset current path
+        currentPath.reset();
+        
+        Log.d("DrawingView", "Finished drawing path, total paths: " + paths.size());
     }
     
     @Override
@@ -177,6 +369,52 @@ public class DrawingView extends View {
     public void setColor(@ColorInt int color) {
         currentColor = color;
         setupPaint();
+    }
+    
+    /**
+     * Set the brush type for drawing
+     * @param brushType The brush type to use
+     */
+    public void setBrushType(BrushType brushType) {
+        this.currentBrushType = brushType;
+        setupPaint();
+        Log.d("DrawingView", "Brush type changed to: " + brushType);
+    }
+    
+    /**
+     * Get the current brush type
+     * @return Current brush type
+     */
+    public BrushType getCurrentBrushType() {
+        return currentBrushType;
+    }
+    
+    /**
+     * Enable or disable pressure sensitivity
+     * @param enabled True to enable pressure sensitivity, false to disable
+     */
+    public void setPressureSensitivityEnabled(boolean enabled) {
+        this.pressureSensitivityEnabled = enabled;
+        Log.d("DrawingView", "Pressure sensitivity " + (enabled ? "enabled" : "disabled"));
+    }
+    
+    /**
+     * Check if pressure sensitivity is enabled
+     * @return True if pressure sensitivity is enabled
+     */
+    public boolean isPressureSensitivityEnabled() {
+        return pressureSensitivityEnabled;
+    }
+    
+    /**
+     * Enable or disable touch interaction for drawing
+     * This is used to allow or prevent drawing based on game state
+     * @param enabled true to enable drawing, false to disable
+     */
+    public void setInteractionEnabled(boolean enabled) {
+        // Store enabled state
+        setClickable(enabled);
+        setFocusable(enabled);
     }
     
     /**
@@ -386,15 +624,41 @@ public class DrawingView extends View {
      */
     public void setPathsFromJson(String jsonString) {
         if (jsonString == null || jsonString.isEmpty()) {
+            Log.d("DrawingView", "Empty JSON string for paths, skipping");
             return;
         }
         
+        // Ensure we have a valid bitmap and canvas before proceeding
+        if (canvasBitmap == null || drawCanvas == null) {
+            Log.w("DrawingView", "Canvas bitmap or drawCanvas is null, attempting to create");
+            int w = getWidth();
+            int h = getHeight();
+            
+            if (w <= 0 || h <= 0) {
+                // If dimensions are not available yet, post to UI thread to try again later
+                Log.w("DrawingView", "Invalid dimensions for bitmap creation: w=" + w + ", h=" + h);
+                post(() -> setPathsFromJson(jsonString));
+                return;
+            }
+            
+            try {
+                canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                drawCanvas = new Canvas(canvasBitmap);
+                Log.d("DrawingView", "Created new bitmap in setPathsFromJson: w=" + w + ", h=" + h);
+            } catch (Exception e) {
+                Log.e("DrawingView", "Failed to create bitmap in setPathsFromJson: " + e.getMessage());
+                return;
+            }
+        }
+        
         try {
+            Log.d("DrawingView", "Parsing JSON paths: " + jsonString.substring(0, Math.min(50, jsonString.length())) + "...");
             JSONObject jsonDrawing = new JSONObject(jsonString);
             JSONArray jsonPaths = jsonDrawing.getJSONArray("paths");
             
             // Clear existing paths
             paths.clear();
+            Log.d("DrawingView", "Cleared existing paths, loading " + jsonPaths.length() + " new paths");
             
             // Recreate paths from JSON
             for (int i = 0; i < jsonPaths.length(); i++) {
@@ -425,8 +689,13 @@ public class DrawingView extends View {
             
             // Redraw canvas with new paths
             redrawCanvas();
+            Log.d("DrawingView", "Successfully loaded and drew " + paths.size() + " paths");
             
         } catch (JSONException e) {
+            Log.e("DrawingView", "Error parsing JSON paths: " + e.getMessage());
+            e.printStackTrace();
+        } catch (Exception e) {
+            Log.e("DrawingView", "Unexpected error in setPathsFromJson: " + e.getMessage());
             e.printStackTrace();
         }
     }

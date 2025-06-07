@@ -45,6 +45,7 @@ firebaseCrashlyticsBuildtools = "3.0.3"
 roomCompilerProcessingTesting = "2.7.1"
 lifecycleCommonJvm = "2.9.0"
 playServicesGames = "23.2.0"
+firebaseFirestore = "25.1.4"
 
 [libraries]
 gms-play-services-fonts = { module = "com.google.android.gms:play-services-fonts", version.ref = "playServicesFontsVersion" }
@@ -116,6 +117,7 @@ firebase-crashlytics-buildtools = { group = "com.google.firebase", name = "fireb
 room-compiler-processing-testing = { group = "androidx.room", name = "room-compiler-processing-testing", version.ref = "roomCompilerProcessingTesting" }
 lifecycle-common-jvm = { group = "androidx.lifecycle", name = "lifecycle-common-jvm", version.ref = "lifecycleCommonJvm" }
 play-services-games = { group = "com.google.android.gms", name = "play-services-games", version.ref = "playServicesGames" }
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore", version.ref = "firebaseFirestore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -1,19 +1,19 @@
-package com.example.drawit_app.network;
+package com.example.drawit_app.api;
 
 import com.example.drawit_app.model.Drawing;
 import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
 import com.example.drawit_app.model.User;
-import com.example.drawit_app.network.request.AuthRequest;
-import com.example.drawit_app.network.request.CreateLobbyRequest;
-import com.example.drawit_app.network.request.JoinLobbyRequest;
-import com.example.drawit_app.network.request.RateDrawingRequest;
-import com.example.drawit_app.network.request.RefreshTokenRequest;
-import com.example.drawit_app.network.request.RegisterRequest;
-import com.example.drawit_app.network.request.UpdateProfileRequest;
-import com.example.drawit_app.network.response.ApiResponse;
-import com.example.drawit_app.network.response.AuthResponse;
-import com.example.drawit_app.network.response.LobbyListResponse;
+import com.example.drawit_app.api.request.AuthRequest;
+import com.example.drawit_app.api.request.CreateLobbyRequest;
+import com.example.drawit_app.api.request.JoinLobbyRequest;
+import com.example.drawit_app.api.request.RateDrawingRequest;
+import com.example.drawit_app.api.request.RefreshTokenRequest;
+import com.example.drawit_app.api.request.RegisterRequest;
+import com.example.drawit_app.api.request.UpdateProfileRequest;
+import com.example.drawit_app.api.response.ApiResponse;
+import com.example.drawit_app.api.response.AuthResponse;
+import com.example.drawit_app.api.response.LobbyListResponse;
 
 import java.util.List;
 

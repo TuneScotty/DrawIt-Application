@@ -1,4 +1,4 @@
-package com.example.drawit_app.network.response;
+package com.example.drawit_app.api.response;
 
 /**
  * Generic wrapper for API responses

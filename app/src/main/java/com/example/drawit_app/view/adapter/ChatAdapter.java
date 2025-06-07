@@ -49,7 +49,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.MessageViewHol
         notifyDataSetChanged();
     }
 
-    public class MessageViewHolder extends RecyclerView.ViewHolder {
+    public static class MessageViewHolder extends RecyclerView.ViewHolder {
         private final ItemChatMessageBinding binding;
 
         public MessageViewHolder(ItemChatMessageBinding binding) {

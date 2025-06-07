@@ -107,26 +107,4 @@ public class LobbySettingsManager {
         }
 
     }
-    
-    /**
-     * Clear settings for a specific lobby
-     */
-    public void clearSettings(String lobbyId) {
-        if (context == null || lobbyId == null || lobbyId.isEmpty()) {
-            return;
-        }
-        
-        try {
-            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-            SharedPreferences.Editor editor = prefs.edit();
-            
-            editor.remove(KEY_ROUNDS_PREFIX + lobbyId);
-            editor.remove(KEY_DURATION_PREFIX + lobbyId);
-            editor.apply();
-            
-            Log.d(TAG, "Cleared settings for lobby " + lobbyId);
-        } catch (Exception e) {
-            Log.e(TAG, "Error clearing settings", e);
-        }
-    }
 }

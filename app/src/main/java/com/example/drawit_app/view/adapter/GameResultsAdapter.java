@@ -48,7 +48,7 @@ public class GameResultsAdapter extends RecyclerView.Adapter<GameResultsAdapter.
         notifyDataSetChanged();
     }
 
-    public class ResultViewHolder extends RecyclerView.ViewHolder {
+    public static class ResultViewHolder extends RecyclerView.ViewHolder {
         private final ItemGameResultBinding binding;
 
         public ResultViewHolder(ItemGameResultBinding binding) {

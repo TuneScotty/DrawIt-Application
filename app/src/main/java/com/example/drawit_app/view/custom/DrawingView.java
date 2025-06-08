@@ -140,27 +140,39 @@ public class DrawingView extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         
-        // Validate dimensions before creating bitmap to prevent IllegalArgumentException
+        // According to StackOverflow solution, we need to ensure dimensions are valid
+        // and postpone bitmap creation if they're not
         if (w <= 0 || h <= 0) {
-            Log.e("DrawingView", "Invalid dimensions for bitmap: w=" + w + ", h=" + h);
-            // Use minimum valid dimensions instead of returning
-            w = Math.max(1, w);
-            h = Math.max(1, h);
-            Log.d("DrawingView", "Using minimum valid dimensions: w=" + w + ", h=" + h);
+            Log.e("DrawingView", "Invalid dimensions in onSizeChanged: w=" + w + ", h=" + h);
+            // Don't try to create a bitmap with invalid dimensions
+            return;
         }
         
+        // Log the valid dimensions we're using
+        Log.d("DrawingView", "Creating bitmap with dimensions: w=" + w + ", h=" + h);
+        
         // Recycle old bitmap to prevent memory leaks
-        if (canvasBitmap != null) {
+        if (canvasBitmap != null && !canvasBitmap.isRecycled()) {
             canvasBitmap.recycle();
+            canvasBitmap = null;
         }
         
         try {
             // Create new bitmap and canvas with valid dimensions
-            canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            canvasBitmap = Bitmap.createBitmap(Math.max(1, w), Math.max(1, h), Bitmap.Config.ARGB_8888);
             drawCanvas = new Canvas(canvasBitmap);
-            Log.d("DrawingView", "Created new bitmap with dimensions: w=" + w + ", h=" + h);
-        } catch (IllegalArgumentException e) {
-            Log.e("DrawingView", "Failed to create bitmap: " + e.getMessage());
+            
+            // Draw existing paths onto the new canvas
+            redrawCanvas();
+            
+            Log.d("DrawingView", "Successfully created new bitmap with dimensions: w=" + w + ", h=" + h);
+        } catch (OutOfMemoryError e) {
+            Log.e("DrawingView", "Out of memory creating bitmap: " + e.getMessage());
+            // Handle out of memory by using a smaller bitmap or clearing paths
+            paths.clear();
+            System.gc(); // Request garbage collection
+        } catch (Exception e) {
+            Log.e("DrawingView", "Error creating bitmap: " + e.getMessage());
         }
     }
     
@@ -171,26 +183,65 @@ public class DrawingView extends View {
             return;
         }
         
-        if (canvasBitmap == null) {
-            canvas.drawColor(Color.WHITE);
-        } else {
+        // Always draw a white background
+        canvas.drawColor(Color.WHITE);
+        
+        // Check if we need to create or recreate the bitmap
+        if (canvasBitmap == null || canvasBitmap.isRecycled()) {
+            // Get dimensions - following StackOverflow solution to ensure they're valid
+            int w = getWidth();
+            int h = getHeight();
+            if (w > 0 && h > 0) {
+                try {
+                    Log.d("DrawingView", "Creating bitmap in onDraw: w=" + w + ", h=" + h);
+                    canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                    drawCanvas = new Canvas(canvasBitmap);
+                    
+                    // If we have paths, redraw them on the new canvas
+                    if (!paths.isEmpty()) {
+                        redrawCanvas();
+                    }
+                } catch (OutOfMemoryError oom) {
+                    Log.e("DrawingView", "Out of memory creating bitmap in onDraw: " + oom.getMessage());
+                    // Clear paths to recover memory
+                    paths.clear();
+                    System.gc();
+                } catch (Exception ex) {
+                    Log.e("DrawingView", "Failed to create bitmap in onDraw: " + ex.getMessage());
+                }
+            } else {
+                Log.e("DrawingView", "Cannot create bitmap - invalid dimensions: w=" + w + ", h=" + h);
+                // Just draw paths on the provided canvas without a backing bitmap
+                drawPathsDirectly(canvas);
+                return;
+            }
+        }
+        
+        // Draw the bitmap if it exists and is valid
+        if (canvasBitmap != null && !canvasBitmap.isRecycled()) {
             try {
                 canvas.drawBitmap(canvasBitmap, 0, 0, canvasPaint);
             } catch (Exception e) {
-                canvas.drawColor(Color.WHITE);
-
-                int w = getWidth();
-                int h = getHeight();
-                if (w > 0 && h > 0) {
-                    try {
-                        canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                        drawCanvas = new Canvas(canvasBitmap);
-                    } catch (Exception ex) {
-                        Log.e("DrawingView", "Failed to recreate bitmap: " + ex.getMessage());
-                    }
-                }
+                Log.e("DrawingView", "Error drawing bitmap: " + e.getMessage());
+                // If we can't draw the bitmap, draw paths directly
+                drawPathsDirectly(canvas);
             }
+        } else {
+            // If bitmap is invalid, draw paths directly
+            drawPathsDirectly(canvas);
         }
+    }
+    
+    /**
+     * Draw paths directly on the provided canvas without using a backing bitmap
+     * This is a fallback method when the bitmap is not available
+     */
+    private void drawPathsDirectly(Canvas canvas) {
+        if (canvas == null) {
+            return;
+        }
+        
+        Log.d("DrawingView", "Drawing paths directly on canvas (bitmap unavailable)");
         
         // Draw all stored paths
         for (PathInfo pathInfo : paths) {
@@ -203,6 +254,9 @@ public class DrawingView extends View {
         drawPaint.setColor(currentColor);
         drawPaint.setStrokeWidth(currentStrokeWidth);
         canvas.drawPath(currentPath, drawPaint);
+        
+        // Schedule another redraw to ensure continuous updates
+        invalidate();
     }
     
     // For improved touch handling and smoother drawing
@@ -429,9 +483,47 @@ public class DrawingView extends View {
     /**
      * Clear the canvas and all stored paths
      */
+    /**
+     * Clears all drawing paths and the canvas
+     * Handles bitmap errors gracefully to prevent crashes
+     */
     public void clearCanvas() {
+        // Clear all stored paths
         paths.clear();
-        drawCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
+        currentPath.reset();
+        
+        // Clear the canvas if it's valid
+        if (drawCanvas != null && canvasBitmap != null && !canvasBitmap.isRecycled()) {
+            try {
+                drawCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
+                Log.d("DrawingView", "Canvas cleared successfully");
+            } catch (Exception e) {
+                Log.e("DrawingView", "Error clearing canvas: " + e.getMessage());
+                
+                // Try to recreate the bitmap if clearing failed
+                int w = getWidth();
+                int h = getHeight();
+                if (w > 0 && h > 0) {
+                    try {
+                        // Recycle old bitmap
+                        if (canvasBitmap != null && !canvasBitmap.isRecycled()) {
+                            canvasBitmap.recycle();
+                        }
+                        
+                        // Create new bitmap
+                        canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                        drawCanvas = new Canvas(canvasBitmap);
+                        Log.d("DrawingView", "Recreated bitmap after clear error");
+                    } catch (Exception ex) {
+                        Log.e("DrawingView", "Failed to recreate bitmap: " + ex.getMessage());
+                    }
+                }
+            }
+        } else {
+            Log.d("DrawingView", "Skipped canvas clear - invalid bitmap or canvas");
+        }
+        
+        // Request a UI update
         invalidate();
     }
     
@@ -451,15 +543,35 @@ public class DrawingView extends View {
     /**
      * Redraw all paths on the canvas
      */
+    /**
+     * Redraws all paths onto the canvas bitmap
+     * Handles errors gracefully to prevent crashes
+     */
     private void redrawCanvas() {
-        drawCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
-        
-        for (PathInfo pathInfo : paths) {
-            drawPaint.setColor(pathInfo.color);
-            drawPaint.setStrokeWidth(pathInfo.strokeWidth);
-            drawCanvas.drawPath(pathInfo.path, drawPaint);
+        // Check if we have a valid canvas to draw on
+        if (drawCanvas == null || canvasBitmap == null || canvasBitmap.isRecycled()) {
+            Log.e("DrawingView", "Cannot redraw - canvas or bitmap is invalid");
+            invalidate(); // Request a redraw using onDraw which will handle this case
+            return;
         }
         
+        try {
+            // Clear the canvas
+            drawCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
+            
+            // Draw all stored paths
+            for (PathInfo pathInfo : paths) {
+                drawPaint.setColor(pathInfo.color);
+                drawPaint.setStrokeWidth(pathInfo.strokeWidth);
+                drawCanvas.drawPath(pathInfo.path, drawPaint);
+            }
+            
+            Log.d("DrawingView", "Successfully redrew " + paths.size() + " paths on canvas");
+        } catch (Exception e) {
+            Log.e("DrawingView", "Error redrawing canvas: " + e.getMessage());
+        }
+        
+        // Request a UI update
         invalidate();
     }
     

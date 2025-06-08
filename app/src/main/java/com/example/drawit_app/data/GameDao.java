@@ -30,6 +30,9 @@ public interface GameDao {
     @Query("SELECT * FROM games WHERE gameId = :gameId")
     LiveData<Game> getGameById(String gameId);
     
+    @Query("SELECT * FROM games WHERE gameId = :gameId")
+    Game getGameByIdSync(String gameId);
+    
     @Query("SELECT * FROM games WHERE lobbyId = :lobbyId")
     LiveData<List<Game>> getGamesByLobbyId(String lobbyId);
     

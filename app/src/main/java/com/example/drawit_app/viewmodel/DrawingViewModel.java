@@ -15,6 +15,7 @@ import androidx.lifecycle.MediatorLiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.example.drawit_app.model.ChatMessage;
 import com.example.drawit_app.model.Drawing;
 import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.User;
@@ -51,6 +52,7 @@ public class DrawingViewModel extends ViewModel {
     // Game-related LiveData
     private final MutableLiveData<Game> currentGame = new MutableLiveData<>();
     private final MutableLiveData<List<String>> chatMessages = new MutableLiveData<>();
+    private final MutableLiveData<List<ChatMessage>> chatMessageObjects = new MutableLiveData<>();
     private final MutableLiveData<String> drawingPaths = new MutableLiveData<>();
     private final MutableLiveData<Boolean> gameOverEvent = new MutableLiveData<>();
     private final MutableLiveData<Drawing> drawingDetails = new MutableLiveData<>();
@@ -74,6 +76,7 @@ public class DrawingViewModel extends ViewModel {
         drawingsState.setValue(new DrawingsState(null, null, false));
         isLoading.setValue(false);
         chatMessages.setValue(java.util.Collections.emptyList());
+        chatMessageObjects.setValue(new ArrayList<>());
     }
 
     /**
@@ -286,6 +289,42 @@ public class DrawingViewModel extends ViewModel {
      */
     public LiveData<List<String>> getChatMessages() {
         return chatMessages;
+    }
+    
+    /**
+     * Get chat message objects
+     */
+    public LiveData<List<ChatMessage>> getChatMessageObjects() {
+        return chatMessageObjects;
+    }
+    
+    /**
+     * Add a chat message to the list
+     * @param chatMessage The chat message to add
+     */
+    public void addChatMessage(ChatMessage chatMessage) {
+        if (chatMessage == null) {
+            return;
+        }
+        
+        List<ChatMessage> currentMessages = chatMessageObjects.getValue() != null ?
+                new ArrayList<>(chatMessageObjects.getValue()) : new ArrayList<>();
+        
+        // Check for duplicates
+        boolean isDuplicate = false;
+        for (ChatMessage existingMsg : currentMessages) {
+            if (existingMsg.getMessageId() != null && 
+                chatMessage.getMessageId() != null &&
+                existingMsg.getMessageId().equals(chatMessage.getMessageId())) {
+                isDuplicate = true;
+                break;
+            }
+        }
+        
+        if (!isDuplicate) {
+            currentMessages.add(chatMessage);
+            chatMessageObjects.setValue(currentMessages);
+        }
     }
 
     /**

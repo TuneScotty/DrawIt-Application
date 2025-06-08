@@ -2,6 +2,7 @@ package com.example.drawit_app.util;
 
 import android.util.Log;
 
+import com.example.drawit_app.model.ChatMessage;
 import com.example.drawit_app.model.Drawing;
 import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
@@ -86,7 +87,10 @@ public class WebSocketMessageConverter {
                 game.setNumRounds(((Number) gameMap.get("numRounds")).intValue());
             } catch (Exception e) {
                 Log.e(TAG, "Error parsing numRounds: " + e.getMessage());
+                game.setNumRounds(3); // Default to 3 rounds
             }
+        } else {
+            game.setNumRounds(3); // Default to 3 rounds
         }
         
         if (gameMap.containsKey("roundDurationSeconds")) {
@@ -94,7 +98,42 @@ public class WebSocketMessageConverter {
                 game.setRoundDurationSeconds(((Number) gameMap.get("roundDurationSeconds")).intValue());
             } catch (Exception e) {
                 Log.e(TAG, "Error parsing roundDurationSeconds: " + e.getMessage());
+                game.setRoundDurationSeconds(60); // Default to 60 seconds
             }
+        } else {
+            game.setRoundDurationSeconds(60); // Default to 60 seconds
+        }
+        
+        // Extract current round
+        if (gameMap.containsKey("currentRound")) {
+            try {
+                game.setCurrentRound(((Number) gameMap.get("currentRound")).intValue());
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing currentRound: " + e.getMessage());
+                game.setCurrentRound(1); // Default to round 1
+            }
+        } else {
+            game.setCurrentRound(1); // Default to round 1
+        }
+        
+        // Extract total rounds
+        if (gameMap.containsKey("totalRounds")) {
+            try {
+                game.setTotalRounds(((Number) gameMap.get("totalRounds")).intValue());
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing totalRounds: " + e.getMessage());
+                game.setTotalRounds(3); // Default to 3 rounds
+            }
+        } else {
+            game.setTotalRounds(3); // Default to 3 rounds
+        }
+        
+        // Extract current word
+        if (gameMap.containsKey("currentWord")) {
+            game.setCurrentWord(gameMap.get("currentWord").toString());
+        } else {
+            game.setCurrentWord("apple"); // Default word as fallback
+            Log.w(TAG, "⚠️ No current word in game data, using default");
         }
         
         if (gameMap.containsKey("status") && "active".equals(gameMap.get("status"))) {
@@ -113,13 +152,81 @@ public class WebSocketMessageConverter {
                 User player = convertToUser(playerObj);
                 if (player != null) {
                     players.add(player);
-                    playerScores.put(player.getUserId(), 0.0f);
+                    // Initialize player score or use existing score if available
+                    if (gameMap.containsKey("playerScores") && gameMap.get("playerScores") instanceof Map) {
+                        Map<?, ?> scoresMap = (Map<?, ?>) gameMap.get("playerScores");
+                        if (scoresMap.containsKey(player.getUserId())) {
+                            try {
+                                Object scoreObj = scoresMap.get(player.getUserId());
+                                if (scoreObj instanceof Number) {
+                                    playerScores.put(player.getUserId(), ((Number) scoreObj).floatValue());
+                                } else {
+                                    playerScores.put(player.getUserId(), 0.0f);
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error parsing player score: " + e.getMessage());
+                                playerScores.put(player.getUserId(), 0.0f);
+                            }
+                        } else {
+                            playerScores.put(player.getUserId(), 0.0f);
+                        }
+                    } else {
+                        playerScores.put(player.getUserId(), 0.0f);
+                    }
                 }
             }
             
             if (!players.isEmpty()) {
                 Log.d(TAG, "\u2705 Extracted " + players.size() + " players from game object");
+                game.setPlayers(players);
                 game.setPlayerScores(playerScores);
+            }
+        }
+        
+        // Extract current drawer
+        if (gameMap.containsKey("currentDrawerId")) {
+            String drawerId = gameMap.get("currentDrawerId").toString();
+            game.setCurrentDrawerId(drawerId);
+            
+            // Find the drawer in the players list
+            List<User> players = game.getPlayers();
+            if (players != null) {
+                for (User player : players) {
+                    if (player.getUserId().equals(drawerId)) {
+                        game.setCurrentDrawer(player);
+                        Log.d(TAG, "\u2705 Set current drawer: " + player.getUsername());
+                        break;
+                    }
+                }
+            }
+            
+            // If we couldn't find the drawer in the players list
+            if (game.getCurrentDrawer() == null && players != null && !players.isEmpty()) {
+                // Default to first player
+                User firstPlayer = players.get(0);
+                game.setCurrentDrawer(firstPlayer);
+                game.setCurrentDrawerId(firstPlayer.getUserId());
+                Log.w(TAG, "\u26a0\ufe0f Could not find drawer with ID " + drawerId + ", defaulting to first player: " + firstPlayer.getUsername());
+            }
+        } else if (gameMap.containsKey("currentDrawer") && gameMap.get("currentDrawer") instanceof Map) {
+            // Extract drawer directly from the currentDrawer field
+            Map<?, ?> drawerMap = (Map<?, ?>) gameMap.get("currentDrawer");
+            User drawer = convertToUser(drawerMap);
+            if (drawer != null) {
+                game.setCurrentDrawer(drawer);
+                game.setCurrentDrawerId(drawer.getUserId());
+                Log.d(TAG, "\u2705 Set current drawer from currentDrawer field: " + drawer.getUsername());
+            }
+        } else {
+            // No drawer specified, default to first player if available
+            List<User> players = game.getPlayers();
+            if (players != null && !players.isEmpty()) {
+                User firstPlayer = players.get(0);
+                game.setCurrentDrawer(firstPlayer);
+                game.setCurrentDrawerId(firstPlayer.getUserId());
+                Log.w(TAG, "\u26a0\ufe0f No drawer specified in game data, defaulting to first player: " + firstPlayer.getUsername());
+            } else {
+                Log.e(TAG, "\u274c No drawer specified and no players available!");
             }
         }
         
@@ -607,6 +714,73 @@ public class WebSocketMessageConverter {
 
     public ConnectionStatusMessage parseConnectionStatusMessage(String json) {
         return parseMessage(json, ConnectionStatusMessage.class);
+    }
+
+    /**
+     * Parse a chat message from JSON
+     * @param json The JSON string to parse
+     * @return ChatMessage object or null if parsing fails
+     */
+    public ChatMessage parseChatMessage(String json) {
+        try {
+            // Log the message for debugging
+            Log.d(TAG, "Parsing chat_message: " + json);
+            
+            // Parse the raw JSON structure
+            Type mapType = Types.newParameterizedType(Map.class, String.class, Object.class);
+            JsonAdapter<Map<String, Object>> mapAdapter = moshi.adapter(mapType);
+            Map<String, Object> messageMap = mapAdapter.fromJson(json);
+            
+            if (messageMap != null && messageMap.containsKey("type") && "chat_message".equals(messageMap.get("type"))) {
+                ChatMessage chatMessage = new ChatMessage();
+                
+                // Extract message content
+                if (messageMap.containsKey("message")) {
+                    chatMessage.setMessage(messageMap.get("message").toString());
+                }
+                
+                // Extract game ID
+                if (messageMap.containsKey("game_id")) {
+                    chatMessage.setGameId(messageMap.get("game_id").toString());
+                }
+                
+                // Extract sender info
+                if (messageMap.containsKey("sender") && messageMap.get("sender") instanceof Map) {
+                    Map<?, ?> senderMap = (Map<?, ?>) messageMap.get("sender");
+                    User sender = convertToUser(senderMap);
+                    chatMessage.setSender(sender);
+                }
+                
+                // Extract timestamp
+                if (messageMap.containsKey("timestamp")) {
+                    try {
+                        Object timestampObj = messageMap.get("timestamp");
+                        if (timestampObj instanceof Number) {
+                            chatMessage.setTimestamp(((Number) timestampObj).longValue());
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error parsing timestamp: " + e.getMessage());
+                        chatMessage.setTimestamp(System.currentTimeMillis());
+                    }
+                } else {
+                    chatMessage.setTimestamp(System.currentTimeMillis());
+                }
+                
+                // Set default message type
+                chatMessage.setType(ChatMessage.MessageType.PLAYER_MESSAGE);
+                
+                Log.d(TAG, "Successfully parsed chat message from: " + 
+                      (chatMessage.getSender() != null ? chatMessage.getSender().getUsername() : "unknown"));
+                
+                return chatMessage;
+            }
+            
+            Log.e(TAG, "Could not parse chat_message");
+            return null;
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing chat_message: " + e.getMessage(), e);
+            return null;
+        }
     }
 
     public Lobby convertToLobby(Object rawObject) {

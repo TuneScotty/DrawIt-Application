@@ -20,9 +20,11 @@ import java.util.List;
 public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.MessageViewHolder> {
 
     private List<ChatMessage> messages;
+    private com.example.drawit_app.model.User currentUser;
 
-    public ChatAdapter(List<ChatMessage> messages) {
+    public ChatAdapter(List<ChatMessage> messages, com.example.drawit_app.model.User currentUser) {
         this.messages = messages;
+        this.currentUser = currentUser;
     }
 
     @NonNull
@@ -47,6 +49,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.MessageViewHol
     public void updateMessages(List<ChatMessage> newMessages) {
         this.messages = newMessages;
         notifyDataSetChanged();
+    }
+    
+    public List<ChatMessage> getMessages() {
+        return messages;
     }
 
     public static class MessageViewHolder extends RecyclerView.ViewHolder {

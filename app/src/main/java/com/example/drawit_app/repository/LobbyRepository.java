@@ -1127,24 +1127,15 @@ private void ensureHostInPlayerList(Lobby lobby) {
 
         MutableLiveData<Resource<String>> result = new MutableLiveData<>();
         result.setValue(Resource.loading(null));
-        
-        // Get current lobby to ensure we have all necessary information
         Lobby currentLobby = getCurrentLobby().getValue();
-        
-        // If currentLobby is null, try to get it from multiple sources
+
         if (currentLobby == null) {
-            Log.d(TAG, "Current lobby is null, trying to find lobby: " + lobbyId);
-            
-            // First check the cache with the provided lobbyId
             CachedLobby cachedLobby = lobbyCache.get(lobbyId);
             if (cachedLobby != null && !cachedLobby.isExpired()) {
                 Log.d(TAG, "Found lobby in cache: " + lobbyId);
                 currentLobby = cachedLobby.getLobby();
-                // Update the current lobby in the repository
                 this.currentLobby.setValue(currentLobby);
             }
-            
-            // If still null, check available lobbies (might be in memory but not set as current)
             if (currentLobby == null && availableLobbies.getValue() != null) {
                 Log.d(TAG, "Checking available lobbies list for: " + lobbyId);
                 for (Lobby lobby : availableLobbies.getValue()) {
@@ -1156,62 +1147,34 @@ private void ensureHostInPlayerList(Lobby lobby) {
                     }
                 }
             }
-            
-            // If still null, check the database directly
             if (currentLobby == null) {
                 Log.d(TAG, "Checking database for lobby: " + lobbyId);
                 try {
-                    // Use a CountDownLatch to synchronize with the database operation
                     final CountDownLatch latch = new CountDownLatch(1);
-                    final Lobby[] dbLobbyContainer = new Lobby[1]; // Array to hold result across threads
+                    final Lobby[] dbLobbyContainer = new Lobby[1];
                     
                     appExecutors.diskIO().execute(() -> {
                         try {
                             dbLobbyContainer[0] = lobbyDao.getLobbyByIdSync(lobbyId);
                         } finally {
-                            latch.countDown(); // Signal completion regardless of result
+                            latch.countDown();
                         }
                     });
-                    
-                    // Wait for the database operation to complete (with timeout)
                     boolean completed = latch.await(500, TimeUnit.MILLISECONDS);
                     if (!completed) {
                         Log.w(TAG, "Database lookup timed out for lobby: " + lobbyId);
                     }
-                    
-                    // Check if we found the lobby
                     Lobby dbLobby = dbLobbyContainer[0];
                     if (dbLobby != null) {
                         Log.d(TAG, "Found lobby in database: " + lobbyId);
-                        // Ensure settings are applied
                         settingsManager.applySettings(dbLobby);
                         currentLobby = dbLobby;
                         this.currentLobby.setValue(currentLobby);
-                        
-                        // Also update the cache for future use
                         lobbyCache.put(lobbyId, new CachedLobby(dbLobby));
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Error checking database for lobby: " + e.getMessage(), e);
-                    // Continue with flow, will check if currentLobby is still null below
                 }
-            }
-            
-            // If still null, as last resort, create a minimal lobby object
-            if (currentLobby == null) {
-                Log.d(TAG, "Creating minimal lobby object for: " + lobbyId);
-                currentLobby = new Lobby();
-                currentLobby.setLobbyId(lobbyId);
-                // Set default game settings
-                currentLobby.setNumRounds(3); // Default value
-                currentLobby.setRoundDurationSeconds(60); // Default value
-                
-                // Try to apply any stored settings
-                settingsManager.applySettings(currentLobby);
-                
-                Log.w(TAG, "⚠️ Created minimal lobby object as fallback. Some features may be limited.");
-                
-                // Don't update currentLobby LiveData here to avoid persistent state issues
             }
         }
         

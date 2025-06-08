@@ -52,14 +52,12 @@ dependencies {
     implementation libs.room.common.jvm
     implementation libs.firebase.crashlytics.buildtools
     implementation libs.play.services.games
-    implementation libs.firebase.firestore
     annotationProcessor libs.room.compiler
     testImplementation libs.room.testing
     
     // Retrofit and OkHttp for network calls
     implementation libs.retrofit
     implementation libs.retrofit.converter.moshi
-    // Removed Gson converter since we're using Moshi consistently now
     implementation libs.okhttp
     implementation libs.okhttp.logging
     

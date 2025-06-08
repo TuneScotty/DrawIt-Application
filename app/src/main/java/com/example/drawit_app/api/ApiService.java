@@ -88,6 +88,8 @@ public interface ApiService {
     @GET("games/{gameId}")
     Call<ApiResponse<Game>> getGameDetails(@Header("Authorization") String token, @Path("gameId") String gameId);
     
+    // NOTE: Game joining is handled via WebSocket messages, not REST API
+    
     // Drawing endpoints
     @POST("games/{gameId}/drawings")
     Call<ApiResponse<Drawing>> submitDrawing(@Header("Authorization") String token, @Path("gameId") String gameId, @Body Drawing drawing);

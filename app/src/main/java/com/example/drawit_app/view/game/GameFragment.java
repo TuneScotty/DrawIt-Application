@@ -145,7 +145,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
     
     private void setupRecyclerViews() {
         // Setup chat adapter
-        chatAdapter = new ChatAdapter(new ArrayList<>());
+        chatAdapter = new ChatAdapter(new ArrayList<ChatMessage>(), currentUser);
         binding.recyclerViewChat.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.recyclerViewChat.setAdapter(chatAdapter);
         
@@ -156,12 +156,8 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         
         // Setup player adapter
         playerAdapter = new com.example.drawit_app.view.adapter.PlayerAdapter(new ArrayList<>());
-        if (binding.recyclerViewPlayers != null) {
-            binding.recyclerViewPlayers.setLayoutManager(new LinearLayoutManager(requireContext()));
-            binding.recyclerViewPlayers.setAdapter(playerAdapter);
-        } else {
-            Log.e(TAG, "recyclerViewPlayers is null in GameFragment");
-        }
+        binding.recyclerViewPlayers.setLayoutManager(new LinearLayoutManager(requireContext()));
+        binding.recyclerViewPlayers.setAdapter(playerAdapter);
     }
     
     /**
@@ -408,8 +404,20 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         });
         
         drawingViewModel.getDrawingPaths().observe(getViewLifecycleOwner(), paths -> {
-            if (!isDrawingTurn() && paths != null) {
-                binding.drawingView.setPathsFromJson(paths);
+            if (paths != null && !paths.isEmpty()) {
+                Log.d(TAG, "📝 Received drawing paths update: " + paths.substring(0, Math.min(50, paths.length())) + "...");
+                
+                // Only apply paths if we're not the drawer (otherwise we'd overwrite our own drawing)
+                if (!isDrawingTurn()) {
+                    try {
+                        binding.drawingView.setPathsFromJson(paths);
+                        Log.d(TAG, "✅ Applied drawing paths from drawer");
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error applying drawing paths: " + e.getMessage());
+                    }
+                } else {
+                    Log.d(TAG, "ℹ️ Ignoring drawing paths as we are the drawer");
+                }
             }
         });
         
@@ -670,6 +678,13 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         boolean isDrawer = isDrawingTurn();
         Log.d(TAG, "🎨 updateDrawingPermissions: Setting drawing enabled = " + isDrawer);
         
+        // Get current game state
+        Game game = drawingViewModel.getCurrentGame().getValue();
+        if (game == null) {
+            Log.e(TAG, "Cannot update drawing permissions - game is null");
+            return;
+        }
+        
         // Update drawing view permissions
         binding.drawingView.setEnabled(isDrawer);
         binding.drawingView.setInteractionEnabled(isDrawer);
@@ -685,12 +700,19 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         binding.chatContainer.setVisibility(View.VISIBLE);
         
         // Update UI to show who's drawing
-        Game game = drawingViewModel.getCurrentGame().getValue();
-        if (game != null && game.getCurrentDrawer() != null) {
+        if (game.getCurrentDrawer() != null) {
             String drawerName = game.getCurrentDrawer().getUsername();
+            
+            // Update drawer status text
             if (isDrawer) {
                 binding.tvCurrentDrawer.setText(getString(R.string.your_turn_to_draw));
-                binding.tvWord.setText(String.format("Draw: %s", game.getCurrentWord()));
+                
+                // Show the word to draw if available
+                if (game.getCurrentWord() != null && !game.getCurrentWord().isEmpty()) {
+                    binding.tvWord.setText(String.format("Draw: %s", game.getCurrentWord()));
+                    binding.tvWord.setVisibility(View.VISIBLE);
+                    Log.d(TAG, "✏️ Showing word to drawer: " + game.getCurrentWord());
+                }
                 Log.d(TAG, "✏️ Setting UI for drawer: " + currentUser.getUsername());
             } else {
                 binding.tvCurrentDrawer.setText(String.format(Locale.getDefault(), "%s is drawing", drawerName));
@@ -704,7 +726,19 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         Log.d("GameFragment", "Drawing permissions updated: " + (isDrawer ? "You can draw" : "You cannot draw"));
     }
     
+    // Track the last timer update timestamp to prevent duplicate timer starts
+    private long lastTimerUpdateTimestamp = 0;
+    private static final long TIMER_UPDATE_THRESHOLD_MS = 500; // Minimum time between timer updates
+    
     private void startRoundTimer() {
+        // Prevent rapid timer restarts by checking timestamp
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastTimerUpdateTimestamp < TIMER_UPDATE_THRESHOLD_MS) {
+            Log.d(TAG, "⏱️ Ignoring timer restart request - too soon after previous update");
+            return;
+        }
+        lastTimerUpdateTimestamp = currentTime;
+        
         // Cancel any existing timer
         if (roundTimer != null) {
             roundTimer.cancel();
@@ -719,7 +753,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         }
         
         // Check if game is in active state
-        if (game.getGameState() != Game.GameState.ACTIVE) {
+        if (game.getGameState() != Game.GameState.ACTIVE && game.getGameState() != Game.GameState.DRAWING) {
             Log.d(TAG, "⏱️ Not starting timer - game state is " + game.getGameState());
             return;
         }
@@ -727,18 +761,40 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         // Get the time remaining from game state (in seconds)
         int timeRemainingSeconds = game.getRemainingTime();
         if (timeRemainingSeconds <= 0) {
-            Log.e(TAG, "Invalid time remaining: " + timeRemainingSeconds + ", using default 60 seconds");
-            timeRemainingSeconds = 60; // Default to 60 seconds if invalid
+            // Use round duration if available, otherwise default to 60 seconds
+            timeRemainingSeconds = game.getRoundDurationSeconds() > 0 ? 
+                game.getRoundDurationSeconds() : 60;
+            
+            Log.d(TAG, "⏱️ Using round duration: " + timeRemainingSeconds + " seconds");
+            
+            // Update the game's remaining time
+            game.setRemainingTime(timeRemainingSeconds);
+            drawingViewModel.updateCurrentGame(game);
         }
         
         // Convert to milliseconds for CountDownTimer
-        long timeRemainingMillis = timeRemainingSeconds * 1000L;
+        final long timeRemainingMillis = timeRemainingSeconds * 1000L;
+        final int finalTimeRemainingSeconds = timeRemainingSeconds;
+        
+        Log.d(TAG, "⏱️ Starting timer with " + timeRemainingSeconds + " seconds");
         
         // Create and start a new timer
         roundTimer = new CountDownTimer(timeRemainingMillis, 1000) {
             @Override
             public void onTick(long millisUntilFinished) {
+                if (!isAdded() || getActivity() == null) {
+                    Log.d(TAG, "⏱️ Fragment not attached, cancelling timer");
+                    cancel();
+                    return;
+                }
+                
                 int secondsRemaining = (int) (millisUntilFinished / 1000);
+                
+                // Update the game's remaining time
+                Game currentGame = drawingViewModel.getCurrentGame().getValue();
+                if (currentGame != null) {
+                    currentGame.setRemainingTime(secondsRemaining);
+                }
                 
                 // Update the timer text
                 binding.tvTimer.setText(String.valueOf(secondsRemaining));
@@ -755,11 +811,18 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                     binding.tvTimer.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorPrimary));
                 }
                 
-                Log.d(TAG, "⏱️ Timer tick: " + secondsRemaining + "s remaining");
+                // Reduce logging frequency to avoid log spam
+                if (secondsRemaining % 5 == 0 || secondsRemaining <= 10) {
+                    Log.d(TAG, "⏱️ Timer tick: " + secondsRemaining + "s remaining");
+                }
             }
             
             @Override
             public void onFinish() {
+                if (!isAdded() || getActivity() == null) {
+                    return;
+                }
+                
                 // Timer reached zero
                 binding.tvTimer.setText("0");
                 binding.tvTimer.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorError));
@@ -773,6 +836,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                     
                     // Update local game state to reflect round completion
                     currentGame.setGameState(Game.GameState.FINISHED);
+                    currentGame.setRemainingTime(0);
                     drawingViewModel.updateCurrentGame(currentGame);
                 }
             }
@@ -781,31 +845,62 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         Log.d(TAG, "⏱️ Started round timer for " + timeRemainingSeconds + " seconds");
     }
     
+    // Track the last processed game state message to prevent duplicate processing
+    private String lastProcessedGameStateId = null;
+    
     @Override
     public void onGameStateChanged(GameStateMessage message) {
         // This is called from WebSocketService when game updates are received
-        if (message != null && message.getGamePayload() != null) {
-            Log.d("GameFragment", "Game state update received: " + message.getGamePayload().getEvent());
+        if (message == null || message.getGamePayload() == null) {
+            Log.w(TAG, "Received null game state message or payload");
+            return;
+        }
+        
+        // Generate a message ID based on content to detect duplicates
+        String messageId = String.valueOf(message.hashCode());
+        
+        // Check if we've already processed this exact message
+        if (messageId.equals(lastProcessedGameStateId)) {
+            Log.d(TAG, "🔄 Skipping duplicate game state message");
+            return;
+        }
+        
+        // Store this message ID as the last processed
+        lastProcessedGameStateId = messageId;
+        
+        Log.d(TAG, "Game state update received: " + 
+              (message.getGamePayload().getEvent() != null ? message.getGamePayload().getEvent() : "NO_EVENT"));
+        
+        try {
+            // Force UI update on main thread to ensure visibility
+            if (getActivity() == null) {
+                Log.e(TAG, "Cannot update game state - activity is null");
+                return;
+            }
             
-            try {
-                // Force UI update on main thread to ensure visibility
-                requireActivity().runOnUiThread(() -> {
-                    // Force show game content
-                    binding.progressBarGame.setVisibility(View.GONE);
-                    binding.gameContentContainer.setVisibility(View.VISIBLE);
+            getActivity().runOnUiThread(() -> {
+                if (!isAdded()) {
+                    Log.e(TAG, "Cannot update game state - fragment not added");
+                    return;
+                }
+                
+                // Force show game content
+                binding.progressBarGame.setVisibility(View.GONE);
+                binding.gameContentContainer.setVisibility(View.VISIBLE);
+                
+                // Update the current game in the ViewModel to ensure all components have access to it
+                Game currentGame = drawingViewModel.getCurrentGame().getValue();
+                if (currentGame != null) {
+                    // Log detailed game state information for debugging
+                    Log.d(TAG, "📊 Game state update: " + 
+                          (message.getGamePayload().getEvent() != null ? message.getGamePayload().getEvent() : "NO_EVENT") + 
+                          ", Round: " + message.getGamePayload().getCurrentRound() + "/" + 
+                          message.getGamePayload().getMaxRounds() + 
+                          ", Time: " + message.getGamePayload().getTimeRemainingSeconds() + "s");
                     
-                    // Update the current game in the ViewModel to ensure all components have access to it
-                    Game currentGame = drawingViewModel.getCurrentGame().getValue();
-                    if (currentGame != null) {
-                        // Log detailed game state information for debugging
-                        Log.d(TAG, "📊 Game state update: " + 
-                              (message.getGamePayload().getEvent() != null ? message.getGamePayload().getEvent() : "NO_EVENT") + 
-                              ", Round: " + message.getGamePayload().getCurrentRound() + "/" + 
-                              message.getGamePayload().getMaxRounds() + 
-                              ", Time: " + message.getGamePayload().getTimeRemainingSeconds() + "s");
-                        
-                        // Update game state from message
-                        if (message.getGamePayload().getEvent() != null) {
+                    // Update game state from message
+                    if (message.getGamePayload().getEvent() != null) {
+                        try {
                             Game.GameState newState = Game.GameState.valueOf(message.getGamePayload().getEvent());
                             Game.GameState oldState = currentGame.getGameState();
                             
@@ -825,11 +920,11 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                                 gameRepository.addSystemChatMessage(roundMessage);
                             }
                             
-                                // Update the game state
+                            // Update the game state
                             currentGame.setGameState(newState);
                             
                             // Handle timer based on game state
-                            if (newState == Game.GameState.ACTIVE) {
+                            if (newState == Game.GameState.ACTIVE || newState == Game.GameState.DRAWING) {
                                 // Start or restart timer when game is active
                                 startRoundTimer();
                             } else if (newState == Game.GameState.FINISHED || 
@@ -840,30 +935,33 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                                     roundTimer = null;
                                 }
                             }
+                        } catch (IllegalArgumentException e) {
+                            Log.e(TAG, "Invalid game state received: " + message.getGamePayload().getEvent());
                         }
+                    }
+                    
+                    // Update current round
+                    if (message.getGamePayload().getCurrentRound() > 0) {
+                        currentGame.setCurrentRound(message.getGamePayload().getCurrentRound());
+                    } else if (currentGame.getCurrentRound() <= 0) {
+                        currentGame.setCurrentRound(1); // Default to round 1 if not set
+                    }
+                    
+                    // Update max rounds
+                    if (message.getGamePayload().getMaxRounds() > 0) {
+                        currentGame.setNumRounds(message.getGamePayload().getMaxRounds());
+                    } else if (currentGame.getNumRounds() <= 0) {
+                        currentGame.setNumRounds(3); // Default to 3 rounds if not set
+                    }
+                    
+                    // Update current drawer if provided
+                    if (message.getGamePayload().getCurrentDrawer() != null) {
+                        User drawerFromMessage = message.getGamePayload().getCurrentDrawer();
                         
-                        // Update current round
-                        if (message.getGamePayload().getCurrentRound() > 0) {
-                            currentGame.setCurrentRound(message.getGamePayload().getCurrentRound());
-                        } else if (currentGame.getCurrentRound() <= 0) {
-                            currentGame.setCurrentRound(1); // Default to round 1 if not set
-                        }
-                        
-                        // Update max rounds
-                        if (message.getGamePayload().getMaxRounds() > 0) {
-                            currentGame.setNumRounds(message.getGamePayload().getMaxRounds());
-                        } else if (currentGame.getNumRounds() <= 0) {
-                            currentGame.setNumRounds(3); // Default to 3 rounds if not set
-                        }
-                        
-                        // Update current drawer if provided
-                        if (message.getGamePayload().getCurrentDrawer() != null) {
-                            User drawerFromMessage = message.getGamePayload().getCurrentDrawer();
-                            
-                            // Fix for drawer with display name "You"
-                            if ("You".equals(drawerFromMessage.getUsername()) && drawerFromMessage.getUserId() != null) {
-                                // This is likely the current user, fix the username
-                                Log.d(TAG, "⚠️ Fixing drawer with name 'You' - setting proper user data");
+                        // Fix for drawer with display name "You"
+                        if ("You".equals(drawerFromMessage.getUsername()) && drawerFromMessage.getUserId() != null) {
+                            // This is likely the current user, fix the username
+                            Log.d(TAG, "⚠️ Fixing drawer with name 'You' - setting proper user data");
                                 
                                 // Check if this is the current user
                                 if (currentUser != null && currentUser.getUserId().equals(drawerFromMessage.getUserId())) {
@@ -931,10 +1029,43 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                     
                     // Update word to guess if provided
                     if (message.getGamePayload().getWordToGuess() != null && !message.getGamePayload().getWordToGuess().isEmpty()) {
-                        binding.tvWordToGuess.setText("Guess the word!");
-                        binding.tvWordToGuess.setVisibility(View.VISIBLE);
-                    }
-                    
+                        // Save the word in the game object
+                        currentGame.setCurrentWord(message.getGamePayload().getWordToGuess());
+                        
+                        // Update UI based on whether user is drawer or guesser
+                        if (isDrawingTurn()) {
+                            binding.tvWord.setText(String.format("Draw: %s", message.getGamePayload().getWordToGuess()));
+                            binding.tvWord.setVisibility(View.VISIBLE);
+                            Log.d(TAG, "✏️ Setting word for drawer: " + message.getGamePayload().getWordToGuess());
+                        } else {
+                            binding.tvWord.setText(getString(R.string.guess_the_word));
+                            binding.tvWord.setVisibility(View.VISIBLE);
+                            Log.d(TAG, "👁️ Setting UI for guesser");
+                        }
+                    } else if (currentGame.getCurrentWord() != null && !currentGame.getCurrentWord().isEmpty()) {
+                        // Use existing word if available
+                        if (isDrawingTurn()) {
+                            binding.tvWord.setText(String.format("Draw: %s", currentGame.getCurrentWord()));
+                            binding.tvWord.setVisibility(View.VISIBLE);
+                            Log.d(TAG, "✏️ Using existing word for drawer: " + currentGame.getCurrentWord());
+                        } else {
+                            binding.tvWord.setText(getString(R.string.guess_the_word));
+                            binding.tvWord.setVisibility(View.VISIBLE);
+                            Log.d(TAG, "👁️ Setting UI for guesser with existing word");
+                        }
+                    } else {
+                        // No word available, set a default one for testing
+                        String defaultWord = "apple";
+                        currentGame.setCurrentWord(defaultWord);
+                        if (isDrawingTurn()) {
+                            binding.tvWord.setText(String.format("Draw: %s", defaultWord));
+                            Log.d(TAG, "⚠️ Using default word for drawer: " + defaultWord);
+                        } else {
+                            binding.tvWord.setText(getString(R.string.guess_the_word));
+                            Log.d(TAG, "⚠️ Using default word state for guesser");
+                        }
+                        binding.tvWord.setVisibility(View.VISIBLE);
+                    }                  
                     // Update drawing permissions and UI
                     updateDrawingPermissions();
                     
@@ -946,13 +1077,120 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                 Log.e("GameFragment", "Error processing game update: " + e.getMessage(), e);
             }
         }
-    }
     
     @Override
     public void onError(String errorMessage) {
         // Handle WebSocket error
         if (errorMessage != null && !errorMessage.isEmpty()) {
             Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    @Override
+    public void onChatMessageReceived(ChatMessage chatMessage) {
+        // Handle incoming chat messages
+        if (chatMessage == null) {
+            Log.e(TAG, "Received null chat message");
+            return;
+        }
+        
+        Log.d(TAG, "💬 Chat message received: " + chatMessage.getMessage() + 
+              " from " + (chatMessage.getSender() != null ? chatMessage.getSender().getUsername() : "unknown"));
+        
+        // Save message in ViewModel to ensure it persists across configuration changes
+        drawingViewModel.addChatMessage(chatMessage);
+        
+        // Update UI on main thread
+        if (getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                if (isAdded() && binding != null) {
+                    // Add the message to the chat adapter
+                    if (chatAdapter != null) {
+                        try {
+                            // Get current messages, add the new one, and update the adapter
+                            List<ChatMessage> currentMessages = new ArrayList<>(chatAdapter.getMessages());
+                            
+                            // Check if message already exists to avoid duplicates
+                            boolean isDuplicate = false;
+                            for (ChatMessage existingMsg : currentMessages) {
+                                if (existingMsg.getMessageId() != null && 
+                                    existingMsg.getMessageId().equals(chatMessage.getMessageId())) {
+                                    isDuplicate = true;
+                                    Log.d(TAG, "⚠️ Duplicate message detected, skipping: " + chatMessage.getMessage());
+                                    break;
+                                }
+                            }
+                            
+                            if (!isDuplicate) {
+                                // Add the new message
+                                currentMessages.add(chatMessage);
+                                
+                                // Update the adapter with the new list
+                                chatAdapter.updateMessages(currentMessages);
+                                
+                                // Force adapter to update
+                                chatAdapter.notifyDataSetChanged();
+                                
+                                // Scroll to bottom
+                                if (chatAdapter.getItemCount() > 0) {
+                                    binding.recyclerViewChat.post(() -> {
+                                        binding.recyclerViewChat.smoothScrollToPosition(chatAdapter.getItemCount() - 1);
+                                    });
+                                }
+                                
+                                Log.d(TAG, "✅ Chat message added to adapter: " + chatMessage.getMessage());
+                                
+                                // Check if this is a correct guess
+                                checkForCorrectGuess(chatMessage);
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error updating chat adapter: " + e.getMessage(), e);
+                        }
+                    } else {
+                        Log.e(TAG, "❌ Chat adapter is null");
+                        
+                        // Try to initialize chat adapter if it's null
+                        initializeChatAdapter();
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Initializes the chat adapter if it's null
+     */
+    private void initializeChatAdapter() {
+        if (chatAdapter == null && binding != null) {
+            chatAdapter = new ChatAdapter(new ArrayList<>(), currentUser);
+            binding.recyclerViewChat.setAdapter(chatAdapter);
+            Log.d(TAG, "✅ Chat adapter initialized");
+        }
+    }
+    
+    /**
+     * Checks if a chat message contains a correct guess of the current word
+     */
+    private void checkForCorrectGuess(ChatMessage chatMessage) {
+        Game game = drawingViewModel.getCurrentGame().getValue();
+        if (game == null || game.getCurrentWord() == null || chatMessage.getSender() == null) {
+            return;
+        }
+        
+        // Only check guesses from non-drawers
+        if (chatMessage.getSender().getUserId().equals(game.getCurrentDrawerId())) {
+            return;
+        }
+        
+        // Check if message contains the correct word (case insensitive)
+        String message = chatMessage.getMessage().toLowerCase();
+        String word = game.getCurrentWord().toLowerCase();
+        
+        if (message.contains(word)) {
+            // Correct guess!
+            String correctGuessMsg = chatMessage.getSender().getUsername() + " guessed the word!";
+            gameRepository.addSystemChatMessage(correctGuessMsg);
+            Log.d(TAG, "🎉 Correct guess detected: " + correctGuessMsg);
         }
     }
     

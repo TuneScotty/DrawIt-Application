@@ -59,13 +59,6 @@ public class ProfileFragment extends Fragment {
             }
         });
         
-        // Change password button click listener
-        binding.btnChangePassword.setOnClickListener(v -> {
-            // Show password change dialog
-            ChangePasswordDialogFragment dialog = new ChangePasswordDialogFragment();
-            dialog.show(getChildFragmentManager(), "changePassword");
-        });
-        
         // Logout button click listener
         binding.btnLogout.setOnClickListener(v -> {
             authViewModel.logout();
@@ -158,11 +151,9 @@ public class ProfileFragment extends Fragment {
         if (isLoading) {
             binding.progressBar.setVisibility(View.VISIBLE);
             binding.btnUpdateProfile.setEnabled(false);
-            binding.btnChangePassword.setEnabled(false);
         } else {
             binding.progressBar.setVisibility(View.GONE);
             binding.btnUpdateProfile.setEnabled(true);
-            binding.btnChangePassword.setEnabled(true);
         }
     }
 

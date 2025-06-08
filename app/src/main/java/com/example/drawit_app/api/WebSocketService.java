@@ -6,6 +6,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.example.drawit_app.model.ChatMessage;
 import com.example.drawit_app.model.Drawing;
 import com.example.drawit_app.model.Game;
 import com.example.drawit_app.model.Lobby;
@@ -25,9 +26,12 @@ import org.json.JSONObject;
 
 import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -80,6 +84,8 @@ public class WebSocketService {
 
         void onLobbiesUpdated(LobbiesUpdateMessage message);
 
+        void onChatMessageReceived(ChatMessage message);
+
         void onError(String errorMessage);
     }
 
@@ -97,6 +103,8 @@ public class WebSocketService {
     // Callback interface for Game state updates
     public interface GameUpdateCallback {
         void onGameStateChanged(GameStateMessage message);
+
+        void onChatMessageReceived(ChatMessage chatMessage);
 
         void onError(String errorMessage);
     }
@@ -162,6 +170,9 @@ public class WebSocketService {
                             break;
                         case "lobby_joined":
                             handleLobbyJoinedMessage(text);
+                            break;
+                        case "chat_message":
+                            handleChatMessage(text);
                             break;
                         default:
                             Log.w(TAG, "Unknown message type: " + type);
@@ -244,10 +255,36 @@ public class WebSocketService {
                 }
             }
 
+            // Set to store recently processed message IDs to prevent duplicate processing
+            private final Set<String> recentlyProcessedMessageIds = new HashSet<>();
+            private static final int MAX_RECENT_MESSAGES = 10;
+            
             // Process game state messages and notify all relevant callbacks
             // Enhanced to ensure reliable delivery, especially for game start events
             private void handleGameStateMessage(String json) {
                 try {
+                    // Generate a message ID based on content hash to detect duplicates
+                    String messageId = String.valueOf(json.hashCode());
+                    
+                    // Check if we've recently processed this exact message
+                    if (recentlyProcessedMessageIds.contains(messageId)) {
+                        Log.d(TAG, "🔄 Skipping duplicate game state message with ID: " + messageId);
+                        return;
+                    }
+                    
+                    // Add to recently processed messages
+                    recentlyProcessedMessageIds.add(messageId);
+                    
+                    // Limit the size of the set to prevent memory leaks
+                    if (recentlyProcessedMessageIds.size() > MAX_RECENT_MESSAGES) {
+                        // Remove oldest entry (first one in the set)
+                        Iterator<String> iterator = recentlyProcessedMessageIds.iterator();
+                        if (iterator.hasNext()) {
+                            iterator.next();
+                            iterator.remove();
+                        }
+                    }
+                    
                     GameStateMessage message = messageConverter.parseGameStateMessage(json);
 
                     if (message == null) {
@@ -281,10 +318,9 @@ public class WebSocketService {
                                 Log.d(TAG, "🎨 WebSocketService setting first player as drawer: " + 
                                       firstPlayer.getUsername() + " (" + firstPlayer.getUserId() + ")");
                                 
-                                // Also set word to guess if missing
+                                // Log warning if word to guess is missing
                                 if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
-                                    game.setCurrentWord("apple"); // Default word
-                                    Log.d(TAG, "📝 WebSocketService setting default word to guess: 'apple'");
+                                    Log.w(TAG, "📝 WebSocketService detected missing word to guess");
                                 }
                             }
                             
@@ -294,10 +330,9 @@ public class WebSocketService {
                                 Log.d(TAG, "🔢 WebSocketService setting current round to 1");
                             }
                             
-                            // Make sure total rounds is set
+                            // Log warning if total rounds is not set
                             if (game.getTotalRounds() <= 0) {
-                                game.setTotalRounds(3); // Default to 3 rounds
-                                Log.d(TAG, "🔢 WebSocketService setting total rounds to default (3)");
+                                Log.w(TAG, "🔢 WebSocketService detected missing total rounds");
                             }
                             
                             // Initialize player scores if missing
@@ -490,48 +525,10 @@ public class WebSocketService {
                 if (game != null) {
                     game.setGameState(Game.GameState.ACTIVE);
                     
-                    // Ensure valid round number
-                    if (gameStateMessage.getGamePayload().getRoundNumber() <= 0) {
-                        Log.w(TAG, "Round number is <= 0, setting default round number to 1");
-                        gameStateMessage.getGamePayload().setCurrentRound(1);
-                    }
-                    
-                    // Ensure max rounds is set
-                    if (gameStateMessage.getGamePayload().getMaxRounds() <= 0) {
-                        Log.w(TAG, "Max rounds is <= 0, setting default max rounds to 3");
-                        gameStateMessage.getGamePayload().setMaxRounds(3);
-                    }
-                    
-                    // Ensure time remaining is set
-                    if (gameStateMessage.getGamePayload().getTimeRemainingSeconds() <= 0) {
-                        Log.w(TAG, "Time remaining is <= 0, setting default time to 60 seconds");
-                        gameStateMessage.getGamePayload().setTimeRemainingSeconds(60);
-                    }
-                    
-                    // Ensure current drawer is set
-                    if (gameStateMessage.getGamePayload().getCurrentDrawer() == null) {
-                        Log.w(TAG, "Current drawer is null, setting host as drawer");
-                        // Create a User object directly
-                        com.example.drawit_app.model.User hostUser = new com.example.drawit_app.model.User();
-                        hostUser.setUserId(game.getHostId());
-                        hostUser.setUsername("Host");
-                        gameStateMessage.getGamePayload().setCurrentDrawer(hostUser);
-                    }
-                    
-                    // Set word to guess if not already set
-                    if (gameStateMessage.getGamePayload().getWordToGuess() == null || 
-                        gameStateMessage.getGamePayload().getWordToGuess().isEmpty()) {
-                        gameStateMessage.getGamePayload().setWordToGuess("apple"); // Default word
-                        Log.w(TAG, "Word to guess is empty, setting default word");
-                    }
-                    
                     // Log detailed game state for debugging
                     Log.d(TAG, "Game state prepared - GameID: " + gameId + 
-                          ", Round: " + gameStateMessage.getGamePayload().getCurrentRound() + 
-                          "/" + gameStateMessage.getGamePayload().getMaxRounds() + 
-                          ", Time: " + gameStateMessage.getGamePayload().getTimeRemainingSeconds() + 
                           ", Drawer: " + (gameStateMessage.getGamePayload().getCurrentDrawer() != null ? 
-                                        gameStateMessage.getGamePayload().getCurrentDrawer().getUserId() : "null"));
+                                         gameStateMessage.getGamePayload().getCurrentDrawer().getUserId() : "null"));
                 }
 
                 // Callback: Notify game state update for all players
@@ -879,6 +876,119 @@ public class WebSocketService {
     }
     
     /**
+     * Send a chat message for a specific game
+     * 
+     * @param gameId the ID of the game
+     * @param message the chat message text
+     */
+    public void sendChatMessage(String gameId, String message) {
+        if (webSocket != null) {
+            try {
+                // Create a map with the message data
+                Map<String, Object> messageData = new HashMap<>();
+                messageData.put("type", "chat_message");
+                messageData.put("game_id", gameId);
+                messageData.put("message", message);
+                messageData.put("timestamp", System.currentTimeMillis());
+                
+                // Convert to JSON using Moshi
+                JsonAdapter<Map<String, Object>> adapter = moshi.adapter(
+                    Types.newParameterizedType(Map.class, String.class, Object.class));
+                String jsonMessage = adapter.toJson(messageData);
+                
+                // Send the message
+                Log.d(TAG, "📤 Sending chat message for game: " + gameId);
+                webSocket.send(jsonMessage);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send chat message: " + e.getMessage(), e);
+                if (callback != null) {
+                    callback.onError("Failed to send chat message: " + e.getMessage());
+                }
+            }
+        } else {
+            Log.e(TAG, "Cannot send chat message: WebSocket is not connected");
+        }
+    }
+    
+    /**
+     * Send a correct guess notification for a game
+     * 
+     * @param gameId the ID of the game
+     */
+    public void sendCorrectGuess(String gameId) {
+        if (webSocket != null) {
+            try {
+                // Create a map with the message data
+                Map<String, Object> messageData = new HashMap<>();
+                messageData.put("type", "correct_guess");
+                messageData.put("game_id", gameId);
+                messageData.put("timestamp", System.currentTimeMillis());
+                
+                // Convert to JSON using Moshi
+                JsonAdapter<Map<String, Object>> adapter = moshi.adapter(
+                    Types.newParameterizedType(Map.class, String.class, Object.class));
+                String jsonMessage = adapter.toJson(messageData);
+                
+                // Send the message
+                Log.d(TAG, "📤 Sending correct guess notification for game: " + gameId);
+                webSocket.send(jsonMessage);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send correct guess: " + e.getMessage(), e);
+                if (callback != null) {
+                    callback.onError("Failed to send correct guess: " + e.getMessage());
+                }
+            }
+        } else {
+            Log.e(TAG, "Cannot send correct guess: WebSocket is not connected");
+        }
+    }
+    
+    /**
+     * Update the drawing path for a game
+     * 
+     * @param gameId the ID of the game
+     * @param pathsJson JSON representation of the drawing paths
+     */
+    public void updateDrawingPath(String gameId, String pathsJson) {
+        if (webSocket != null) {
+            try {
+                // Create a map with the message data
+                Map<String, Object> messageData = new HashMap<>();
+                messageData.put("type", "drawing_update");
+                messageData.put("game_id", gameId);
+                messageData.put("paths", pathsJson);
+                messageData.put("timestamp", System.currentTimeMillis());
+                
+                // Convert to JSON using Moshi
+                JsonAdapter<Map<String, Object>> adapter = moshi.adapter(
+                    Types.newParameterizedType(Map.class, String.class, Object.class));
+                String jsonMessage = adapter.toJson(messageData);
+                
+                // Send the message
+                Log.d(TAG, "📤 Sending drawing update for game: " + gameId);
+                webSocket.send(jsonMessage);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send drawing update: " + e.getMessage(), e);
+                if (callback != null) {
+                    callback.onError("Failed to send drawing update: " + e.getMessage());
+                }
+            }
+        } else {
+            Log.e(TAG, "Cannot send drawing update: WebSocket is not connected");
+        }
+    }
+    
+    /**
+     * Set the active game ID for tracking and WebSocket message routing
+     *
+     * @param gameId the ID of the game to set as active
+     */
+    public void setActiveGameId(String gameId) {
+        Log.d(TAG, "Setting active game ID: " + gameId);
+        this.activeGameId = gameId;
+    }
+    
+    /**
      * Send a game-related message via WebSocket with type and game ID
      * Uses the WebSocketMessageConverter for consistent message formatting
      *
@@ -1092,6 +1202,49 @@ public class WebSocketService {
             Log.e(TAG, "Error processing lobby_joined message: " + e.getMessage(), e);
         }
     }
+    
+    /**
+     * Handle incoming chat messages from the WebSocket
+     * @param json The raw JSON message
+     */
+    private void handleChatMessage(String json) {
+        try {
+            // Parse the chat message using our converter
+            ChatMessage chatMessage = messageConverter.parseChatMessage(json);
+            
+            if (chatMessage == null) {
+                Log.e(TAG, "Failed to parse chat_message");
+                return;
+            }
+            
+            Log.d(TAG, " Received chat message: " + 
+                  (chatMessage.getMessage() != null ? chatMessage.getMessage() : "<empty>") + 
+                  " for game: " + chatMessage.getGameId());
+            
+            // Check if this message is for our active game
+            if (chatMessage.getGameId() != null &&
+                    chatMessage.getGameId().equals(activeGameId)) {
+                
+                // Notify game update callback
+                if (gameUpdateCallback != null) {
+                    Log.d(TAG, "Notifying game callback about chat message");
+                    gameUpdateCallback.onChatMessageReceived(chatMessage);
+                } else {
+                    Log.w(TAG, "No game callback registered to receive chat message");
+                }
+                
+                // Also notify general callback if available
+                if (callback != null) {
+                    callback.onChatMessageReceived(chatMessage);
+                }
+            } else {
+                Log.d(TAG, "Ignoring chat message for inactive game: " + 
+                      chatMessage.getGameId() + ", active game is: " + activeGameId);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to process chat_message: " + e.getMessage(), e);
+        }
+    }
 
     @NonNull
     private static LobbyStateMessage getLobbyStateMessage(String lobbyId, String userId) {
@@ -1121,7 +1274,6 @@ public class WebSocketService {
      * @param token the new authentication token
      */
     public void setAuthToken(String token) {
-        // Don't do anything if token hasn't actually changed
         if (Objects.equals(this.authToken, token)) {
             return;
         }
@@ -1132,22 +1284,16 @@ public class WebSocketService {
         Log.i(TAG, "Auth token updated" +
                 (token != null ? ": " + token.substring(0, Math.min(5, token.length())) + "..." : ": null"));
 
-        // If we have a new valid token and were previously connected with invalid token,
-        // or currently have an active WebSocket, disconnect and reconnect with new token
         boolean hadInvalidToken = oldToken == null || oldToken.isEmpty() || "null".equals(oldToken);
         boolean hasValidToken = token != null && !token.isEmpty() && !"null".equals(token);
 
         if (hasValidToken && (webSocket != null || isConnected || isConnecting)) {
             Log.i(TAG, "Reconnecting with new auth token");
-            // Only disconnect if we're currently connected or connecting
             if (webSocket != null || isConnected || isConnecting) {
-                disconnect(); // Closes existing connection if any
+                disconnect();
             }
-
-            // Reconnect with new token
             connect();
         } else if (!hasValidToken && (isConnected || webSocket != null)) {
-            // Invalid token provided but we're connected - disconnect
             Log.w(TAG, "⛔ Invalid token provided - disconnecting WebSocket");
             disconnect();
         }

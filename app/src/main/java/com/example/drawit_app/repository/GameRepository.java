@@ -1,5 +1,7 @@
 package com.example.drawit_app.repository;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.lifecycle.LiveData;
@@ -9,14 +11,21 @@ import com.example.drawit_app.data.DrawItDatabase;
 import com.example.drawit_app.data.GameDao;
 import com.example.drawit_app.model.ChatMessage;
 import com.example.drawit_app.model.Game;
-import com.example.drawit_app.model.User;
+
 import com.example.drawit_app.api.ApiService;
 import com.example.drawit_app.api.WebSocketService;
 import com.example.drawit_app.api.message.GameStateMessage;
 import com.example.drawit_app.util.WebSocketMessageConverter;
+import com.squareup.moshi.JsonAdapter;
+import com.squareup.moshi.Moshi;
+import com.squareup.moshi.Types;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -90,6 +99,9 @@ public class GameRepository extends BaseRepository {
     private final WebSocketService webSocketService;
     private final WebSocketMessageConverter messageConverter;
     
+    // Executor for background operations
+    private final Executor executor = Executors.newSingleThreadExecutor();
+    
     private final MutableLiveData<Game> currentGame = new MutableLiveData<>();
     private final MutableLiveData<Integer> timeRemaining = new MutableLiveData<>();
     
@@ -97,82 +109,7 @@ public class GameRepository extends BaseRepository {
     private final MutableLiveData<List<ChatMessage>> chatMessages = new MutableLiveData<>(new ArrayList<>());
     
     // WebSocket callback for game state updates
-    private final WebSocketService.GameUpdateCallback gameUpdateCallback = new WebSocketService.GameUpdateCallback() {
-        @Override
-        public void onGameStateChanged(GameStateMessage message) {
-            if (message == null || message.getGamePayload().getGame() == null) {
-                Log.e("GameRepository", "Received null game state message or game");
-                return;
-            }
-            
-            Game updatedGame = message.getGamePayload().getGame();
-            String gameId = updatedGame.getGameId();
-            
-            // Check if this is a game start event
-            boolean isGameStart = message.getType().equals("start_game");
-            
-            Log.d("GameRepository", "📥 Game state update received: " + message.getType() + 
-                  " for game " + gameId);
-            
-            // CRITICAL FIX: Ensure the current drawer is set
-            if (updatedGame.getCurrentDrawer() == null && updatedGame.getPlayers() != null && 
-                !updatedGame.getPlayers().isEmpty()) {
-                User firstPlayer = updatedGame.getPlayers().get(0);
-                updatedGame.setCurrentDrawer(firstPlayer);
-                updatedGame.setCurrentDrawerId(firstPlayer.getUserId());
-                Log.d("GameRepository", "✅ GameRepository set first player as drawer: " + 
-                      firstPlayer.getUsername() + " (ID: " + firstPlayer.getUserId() + ")");
-            }
-            
-            // CRITICAL FIX: Ensure the current word is set
-            if (updatedGame.getCurrentWord() == null || updatedGame.getCurrentWord().isEmpty()) {
-                updatedGame.setCurrentWord("apple");
-                Log.d("GameRepository", "📝 GameRepository set default word to 'apple'");
-            }
-            
-            // CRITICAL FIX: Ensure game state is set
-            if (updatedGame.getGameState() == null) {
-                updatedGame.setGameState(Game.GameState.ACTIVE);
-                Log.d("GameRepository", "🎮 GameRepository set default game state to ACTIVE");
-            }
-            
-            // Update time remaining
-            if (message.getGamePayload().getTimeRemainingSeconds() > 0) {
-                updatedGame.setRemainingTime(message.getGamePayload().getTimeRemainingSeconds());
-            } else if (updatedGame.getRemainingTime() <= 0) {
-                // Set a default time if none is provided
-                updatedGame.setRemainingTime(60); // Default 60 seconds
-                Log.d("GameRepository", "⏱ GameRepository set default remaining time to 60 seconds");
-            }
-            
-            // Log detailed game state for debugging
-            Log.d("GameRepository", "📊 Game state details in repository:" +
-                  "\n - Current drawer: " + (updatedGame.getCurrentDrawer() != null ? 
-                                          updatedGame.getCurrentDrawer().getUsername() : "NULL") +
-                  "\n - Current word: " + (updatedGame.getCurrentWord() != null ? 
-                                       updatedGame.getCurrentWord() : "NULL") +
-                  "\n - Game state: " + (updatedGame.getGameState() != null ? 
-                                      updatedGame.getGameState().name() : "NULL") +
-                  "\n - Round: " + updatedGame.getCurrentRound() + "/" + updatedGame.getTotalRounds() +
-                  "\n - Players: " + (updatedGame.getPlayers() != null ? 
-                                   updatedGame.getPlayers().size() : "NULL"));
-            
-            // CRITICAL FIX: Always update the current game LiveData for game start events
-            // or if we're already tracking this game, or if we don't have any game yet
-            Game currentGameValue = currentGame.getValue();
-            if (isGameStart || currentGameValue == null || 
-                (currentGameValue != null && currentGameValue.getGameId().equals(gameId))) {
-                Log.d("GameRepository", "💬 Posting updated game to LiveData");
-                currentGame.postValue(updatedGame);
-            }
-        }
-
-        
-        @Override
-        public void onError(String errorMessage) {
-            Log.e("GameRepository", "WebSocket game update error: " + errorMessage);
-        }
-    };
+    // Removed redundant gameUpdateCallback field as we're using setupWebSocketCallback() instead
     
     // Current drawing paths JSON
     private final MutableLiveData<String> drawingPaths = new MutableLiveData<>("");
@@ -207,122 +144,81 @@ public class GameRepository extends BaseRepository {
             @Override
             public void onGameStateChanged(GameStateMessage message) {
                 try {
-                    Log.i("GameRepository", "🎮 Received game state message: " + 
-                                     (message.getGamePayload() != null && message.getGamePayload().getEvent() != null ? 
-                                      message.getGamePayload().getEvent() : "update"));
-                    
                     GameStateMessage.GamePayload payload = message.getGamePayload();
-                    if (payload != null && payload.getGame() != null) {
-                        // Get event type and game ID for logging
-                        String event = payload.getEvent();
-                        String gameId = payload.getGame().getGameId();
-                        
-                        // Log detailed message info
-                        Log.i("GameRepository", "🎲 Game event details - ID: " + gameId + 
-                                         ", Event: " + (event != null ? event : "update") +
-                                         ", Current game null? " + (currentGame.getValue() == null));
-                        
-                        // Use messageConverter to safely convert game object
-                        Game updatedGame = messageConverter.convertToGame(payload.getGame());
-                        if (updatedGame == null) {
-                            Log.e("GameRepository", "❌ Failed to convert game object");
-                            return;
-                        }
-                        
-                        // CRITICAL FIX: Special handling for game start events
-                        // This allows non-host players to initialize their game state when game starts
-                        boolean isGameStart = event != null && event.equals("started");
-                        
-                        // CRITICAL FIX: Ensure current drawer is set
-                        if (updatedGame.getCurrentDrawer() == null && updatedGame.getPlayers() != null && 
-                            !updatedGame.getPlayers().isEmpty()) {
-                            User firstPlayer = updatedGame.getPlayers().get(0);
-                            updatedGame.setCurrentDrawer(firstPlayer);
-                            updatedGame.setCurrentDrawerId(firstPlayer.getUserId());
-                            Log.d("GameRepository", "🎨 Setting first player as drawer: " + 
-                                             firstPlayer.getUsername() + " (" + firstPlayer.getUserId() + ")");
-                        }
-                        
-                        // CRITICAL FIX: Ensure current word is set
-                        if (updatedGame.getCurrentWord() == null || updatedGame.getCurrentWord().isEmpty()) {
-                            updatedGame.setCurrentWord("apple"); // Default word as fallback
-                            Log.d("GameRepository", "📝 Setting default word to 'apple'");
-                        }
-                        
-                        // CRITICAL FIX: Make sure game state is ACTIVE
-                        if (updatedGame.getGameState() == null) {
-                            updatedGame.setGameState(Game.GameState.ACTIVE);
-                            Log.d("GameRepository", "🎮 Setting game state to ACTIVE");
-                        }
-                        
-                        // Check if we should update the current game:
-                        // 1. If this is a game start event (for any player, host or non-host)
-                        // 2. OR if we already have this game loaded
-                        // 3. OR if we don't have any game loaded yet
-                        if (isGameStart ||
-                            (currentGame.getValue() != null &&
-                             currentGame.getValue().getGameId().equals(updatedGame.getGameId())) ||
-                            currentGame.getValue() == null) {
-
-                            Log.i("GameRepository", "✅ Updating game state for game " + gameId + 
-                                             (isGameStart ? " (GAME START EVENT)" : " (regular update)"));
-                            
-                            // If game has drawings, safely set them on the current game
-                            if (payload.getDrawings() != null) {
-                                updatedGame.setCurrentRoundDrawings(payload.getDrawings());
-                            }
-
-                            // If game has player scores, set them on the current game
-                            if (payload.getPlayerScores() != null) {
-                                updatedGame.setPlayerScores(payload.getPlayerScores());
-                            }
-                            
-                            // Handle drawing path updates
-                            if ("drawing_update".equals(event) && payload.getDrawingPaths() != null) {
-                                Log.d(TAG, "Received drawing path update via WebSocket");
-                                drawingPaths.postValue(payload.getDrawingPaths());
-                            }
-
-                            // CRITICAL FIX: Update time remaining
-                            if (payload.getTimeRemainingSeconds() > 0) {
-                                timeRemaining.postValue(payload.getTimeRemainingSeconds());
-                                Log.d("GameRepository", "⏱️ Updated time remaining: " + 
-                                                 payload.getTimeRemainingSeconds() + " seconds");
-                            } else if (updatedGame.getRoundDurationSeconds() > 0) {
-                                // If server didn't provide time, use round duration as fallback
-                                timeRemaining.postValue(updatedGame.getRoundDurationSeconds());
-                                Log.d("GameRepository", "⏱️ Using round duration as time: " + 
-                                                 updatedGame.getRoundDurationSeconds() + " seconds");
-                            } else {
-                                // Last resort fallback
-                                timeRemaining.postValue(60); // Default to 60 seconds
-                                Log.d("GameRepository", "⏱️ Using default time: 60 seconds");
-                            }
-
-                            // Use postValue for thread safety
-                            currentGame.postValue(updatedGame);
-                            
-                            // Log successful update
-                            Log.i("GameRepository", "🎯 Game state updated successfully: " + 
-                                             "ID=" + gameId + 
-                                             ", Drawer=" + (updatedGame.getCurrentDrawer() != null ? 
-                                                          updatedGame.getCurrentDrawer().getUsername() : "null") +
-                                             ", Word=" + updatedGame.getCurrentWord() +
-                                             ", Round=" + updatedGame.getCurrentRound() + "/" + updatedGame.getTotalRounds() +
-                                             ", Time=" + timeRemaining.getValue());
-                        }
-
-                        // Update in local database
-                        gameDao.insert(updatedGame);
+                    if (payload == null || payload.getGame() == null) {
+                        Log.e("GameRepository", "Invalid game payload received");
+                        return;
                     }
+                    
+                    String event = payload.getEvent();
+                    final Game updatedGame = messageConverter.convertToGame(payload.getGame());
+                    String gameId = updatedGame.getGameId();
+                    
+                    Log.d("GameRepository", "Game event received: " + event + " for game " + gameId);
+                    
+                    // Handle specific game events
+                    if (event == null) {
+                        handleGenericUpdate(updatedGame, payload);
+                    } else if (event.equals("started")) {
+                        handleGameStarted(updatedGame, payload);
+                    } else if (event.equals("round_started")) {
+                        handleRoundStarted(updatedGame, payload);
+                    } else if (event.equals("drawing_update")) {
+                        handleDrawingUpdate(updatedGame, payload);
+                    } else if (event.equals("guess_submitted")) {
+                        handleGuessSubmitted(updatedGame, payload);
+                    } else if (event.equals("round_ended")) {
+                        handleRoundEnded(updatedGame, payload);
+                    } else if (event.equals("game_ended")) {
+                        handleGameEnded(updatedGame, payload);
+                    } else {
+                        handleGenericUpdate(updatedGame, payload);
+                    }
+                    
+                    // Move database operations to a background thread
+                    executor.execute(() -> {
+                        try {
+                            // Always update the local database with the latest game state
+                            Log.d("GameRepository", " Saving game data to local database: " + gameId);
+                            gameDao.insert(updatedGame);
+                            Log.d("GameRepository", " Game data saved successfully: " + gameId);
+                        } catch (Exception e) {
+                            Log.e("GameRepository", " Error saving game data: " + e.getMessage(), e);
+                        }
+                    });
+                    
                 } catch (Exception e) {
                     Log.e("GameRepository", "Error processing game state: " + e.getMessage(), e);
                 }
             }
 
             @Override
+            public void onChatMessageReceived(ChatMessage chatMessage) {
+                if (chatMessage == null) {
+                    Log.e("GameRepository", "Received null chat message");
+                    return;
+                }
+                
+                Log.d("GameRepository", "📨 Chat message received: " + 
+                      (chatMessage.getMessage() != null ? chatMessage.getMessage() : "<empty>") + 
+                      " from " + (chatMessage.getSender() != null ? chatMessage.getSender().getUsername() : "unknown"));
+                
+                // Add to the chat messages list
+                List<ChatMessage> currentMessages = chatMessages.getValue();
+                if (currentMessages == null) {
+                    currentMessages = new ArrayList<>();
+                }
+                
+                // Add the new message
+                currentMessages.add(chatMessage);
+                
+                // Update the LiveData with the new list
+                chatMessages.postValue(new ArrayList<>(currentMessages));
+            }
+            
+            @Override
             public void onError(String errorMessage) {
-                // Handle WebSocket error
+                Log.e("GameRepository", "WebSocket error: " + errorMessage);
                 setupWebSocketCallback();
             }
         });
@@ -330,6 +226,7 @@ public class GameRepository extends BaseRepository {
     
     /**
      * Start a new game from the current lobby
+     * This initiates the game on the server and broadcasts to all connected clients
      */
     public LiveData<Resource<Game>> startGame(String lobbyId) {
         String token = userRepository.getAuthToken();
@@ -339,14 +236,14 @@ public class GameRepository extends BaseRepository {
             return result;
         }
         
+        // Send start game request to the server
         LiveData<Resource<Game>> result = callApi(apiService.startGame("Bearer " + token, lobbyId));
         
-        // Observe the result to update local database and current game
+        // The actual game state will be received via WebSocket
+        // This just initiates the process on the server
         observeOnce(result, resource -> {
-            if (resource.isSuccess() && resource.getData() != null) {
-                Game game = resource.getData();
-                gameDao.insert(game);
-                currentGame.setValue(game);
+            if (!resource.isSuccess()) {
+                Log.e("GameRepository", "Failed to start game: " + resource.getMessage());
             }
         });
         
@@ -444,35 +341,11 @@ public class GameRepository extends BaseRepository {
      * @param message The message text
      */
     public void sendChatMessage(String gameId, String message) {
-        // Get current user
-        User currentUser = userRepository.getCurrentUser().getValue();
-        if (currentUser == null) {
-            return;
-        }
+        // Send via WebSocket - the server will broadcast to all clients
+        webSocketService.sendChatMessage(gameId, message);
         
-        // Create message
-        ChatMessage chatMessage = new ChatMessage(currentUser, message, ChatMessage.MessageType.PLAYER_MESSAGE);
-        
-        // Add to list
-        List<ChatMessage> currentMessages = chatMessages.getValue();
-        if (currentMessages == null) {
-            currentMessages = new ArrayList<>();
-        }
-        currentMessages.add(chatMessage);
-        chatMessages.postValue(currentMessages);
-        
-        // Send chat message via WebSocket
-        if (webSocketService != null) {
-            try {
-                // Create a message with type "chat_message" and the message content
-                String chatJson = String.format("{\"type\":\"chat_message\",\"gameId\":\"%s\",\"userId\":\"%s\",\"username\":\"%s\",\"message\":\"%s\"}",
-                        gameId, currentUser.getUserId(), currentUser.getUsername(), message);
-                webSocketService.sendMessage(chatJson);
-                Log.d(TAG, "Sent chat message via WebSocket");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to send chat message: " + e.getMessage(), e);
-            }
-        }
+        // We don't add to local chat list here - the message will come back via WebSocket
+        // to ensure consistency across all clients
     }
     
     /**
@@ -480,29 +353,8 @@ public class GameRepository extends BaseRepository {
      * @param gameId The ID of the current game
      */
     public void sendCorrectGuess(String gameId) {
-        // Get current user
-        User currentUser = userRepository.getCurrentUser().getValue();
-        if (currentUser == null) {
-            return;
-        }
-        
-        // Create a system message to indicate correct guess
-        String systemMessage = currentUser.getUsername() + " guessed the word correctly!"; 
-        ChatMessage chatMessage = new ChatMessage(null, systemMessage, ChatMessage.MessageType.SYSTEM_MESSAGE);
-        
-        // Add to list
-        List<ChatMessage> currentMessages = chatMessages.getValue();
-        if (currentMessages == null) {
-            currentMessages = new ArrayList<>();
-        }
-        currentMessages.add(chatMessage);
-        chatMessages.postValue(currentMessages);
-        
-        // Send to server via WebSocket
-        webSocketService.sendMessage("correct_guess", gameId);
-        
-        // Log the action
-        Log.d("GameRepository", "✅ User " + currentUser.getUsername() + " correctly guessed the word");
+        // Send the correct guess to the server which will update scores and notify all clients
+        webSocketService.sendCorrectGuess(gameId);
     }
     
     /**
@@ -520,9 +372,6 @@ public class GameRepository extends BaseRepository {
         }
         currentMessages.add(chatMessage);
         chatMessages.postValue(currentMessages);
-        
-        // Log the message
-        Log.d("GameRepository", "💬 System message: " + message);
     }
     
     /**
@@ -530,23 +379,7 @@ public class GameRepository extends BaseRepository {
      * @param gameId The ID of the current game
      */
     public void advanceToNextRound(String gameId) {
-        // Get current game state
-        Game currentGame = getCurrentGame().getValue();
-        if (currentGame == null) {
-            Log.e("GameRepository", "Cannot advance round - game is null");
-            return;
-        }
-        
-        // Log the action
-        int currentRound = currentGame.getCurrentRound();
-        int maxRounds = currentGame.getNumRounds();
-        Log.d("GameRepository", "⏱️ Advancing from round " + currentRound + "/" + maxRounds);
-        
-        // Send round completion message to server via WebSocket
         webSocketService.sendMessage("round_complete", gameId);
-        
-        // Add system message about round completion
-        addSystemChatMessage("Round " + currentRound + " completed!");
     }
     
     /**
@@ -555,21 +388,11 @@ public class GameRepository extends BaseRepository {
      * @param pathsJson JSON representation of the paths
      */
     public void updateDrawingPath(String gameId, String pathsJson) {
-        // Update local LiveData
-        drawingPaths.postValue(pathsJson);
+        // Send via WebSocket to broadcast to all clients
+        webSocketService.updateDrawingPath(gameId, pathsJson);
         
-        // Send drawing path update via WebSocket
-        if (webSocketService != null && pathsJson != null && !pathsJson.isEmpty()) {
-            try {
-                // Create a message with type "drawing_update" and the drawing paths
-                String message = String.format("{\"type\":\"drawing_update\",\"gameId\":\"%s\",\"paths\":%s}", 
-                                              gameId, pathsJson);
-                webSocketService.sendMessage(message);
-                Log.d(TAG, "Sent drawing path update via WebSocket");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to send drawing path update: " + e.getMessage(), e);
-            }
-        }
+        // We don't update local paths directly - they will come back via WebSocket
+        // to ensure consistency across all clients
     }
     
     /**
@@ -577,6 +400,10 @@ public class GameRepository extends BaseRepository {
      * @param callback The callback to receive game updates
      */
     public void setGameUpdateCallback(WebSocketService.GameUpdateCallback callback) {
+        // This method is kept for backward compatibility
+        // We prefer to use our internal setupWebSocketCallback method
+        // to ensure consistent handling of game events
+        Log.w("GameRepository", "External setGameUpdateCallback called - this may override internal handlers");
         webSocketService.setGameUpdateCallback(callback);
     }
     
@@ -585,9 +412,10 @@ public class GameRepository extends BaseRepository {
      * @param gameData JSON data for game update
      */
     public void processGameUpdate(String gameData) {
-        // This would typically parse the data and handle it
-        // For now, we'll just log it
-        setError("Received game update: " + (gameData != null ? gameData.substring(0, Math.min(20, gameData.length())) + "..." : "null"));
+        // The WebSocketService now handles this through the GameUpdateCallback
+        // This method is kept for backward compatibility
+        Log.d("GameRepository", "Game update received: " + 
+              (gameData != null ? gameData.substring(0, Math.min(20, gameData.length())) + "..." : "null"));
     }
     
     /**
@@ -605,42 +433,125 @@ public class GameRepository extends BaseRepository {
             return result;
         }
         
+        Log.i("GameRepository", "🎮 Joining game: " + gameId);
+        
         // Register for game updates via WebSocket
         if (webSocketService != null) {
-            webSocketService.setGameUpdateCallback(gameUpdateCallback);
-            Log.i("GameRepository", "Registered game update callback for game: " + gameId);
+            // Set up callback to receive game state updates
+            setupWebSocketCallback();
+            Log.i("GameRepository", "✅ Registered game update callback for game: " + gameId);
+            
+            // Set the active game ID in WebSocketService to track this game
+            webSocketService.setActiveGameId(gameId);
+            Log.d("GameRepository", "🔄 Set active game ID in WebSocketService: " + gameId);
+            
+            // Use executor for database operations
+            executor.execute(() -> {
+                try {
+                    // Check if game exists in local database
+                    Game localGame = gameDao.getGameByIdSync(gameId);
+                    
+                    if (localGame != null) {
+                        Log.d("GameRepository", "📋 Found game in local database: " + gameId);
+                        currentGame.postValue(localGame);
+                        result.postValue(Resource.success(localGame));
+                    } else {
+                        // We don't have the game locally yet
+                        Log.d("GameRepository", "🔍 Game not found in local database, waiting for WebSocket updates");
+                        
+                        // Post on main thread
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            // Return success with null data - the actual game data will come via WebSocket
+                            result.postValue(Resource.success(null));
+                        });
+                    }
+                } catch (Exception e) {
+                    Log.e("GameRepository", "⚠️ Error accessing local database: " + e.getMessage(), e);
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        result.postValue(Resource.success(null)); // Still continue with WebSocket
+                    });
+                }
+            });
+            
+            // Explicitly request a game state update via WebSocket
+            sendGameStateRequest(gameId);
+            
+            // Set up a retry mechanism with multiple attempts
+            setupGameStateRetryMechanism(gameId, 3); // Use 3 as the maximum number of retries
+            
         } else {
-            Log.e("GameRepository", "WebSocketService is null, cannot register for game updates");
+            Log.e("GameRepository", "❌ WebSocketService is null, cannot register for game updates");
+            result.postValue(Resource.error("WebSocket service unavailable", null));
         }
         
-        // IMPORTANT: The server doesn't have a /games/{gameId} endpoint implemented yet
-        // Instead of using the API, we'll create a temporary game object and rely on WebSocket updates
-        // for the actual game state
-        Log.i("GameRepository", "Creating temporary game object for: " + gameId);
-        
-        // Create a temporary game object
-        Game game = new Game();
-        game.setGameId(gameId);
-        game.setRoundDurationSeconds(60);
-        game.setNumRounds(3);
-        game.setGameState(Game.GameState.ACTIVE);
-        game.setCurrentRound(1);
-        
-        // Create a placeholder drawer to avoid background thread issues
-        User drawer = new User();
-        drawer.setUserId("current_user");
-        drawer.setUsername("You");
-        game.setCurrentDrawer(drawer);
-        
-        // Update current game
-        currentGame.postValue(game);
-        
-        // Return success with temporary data
-        // The actual game state will be updated via WebSocket
-        result.postValue(Resource.success(game));
-        Log.i("GameRepository", "Created temporary game object, waiting for WebSocket updates");
-        
         return result;
+    }
+    
+    /**
+     * Send a game state request via WebSocket
+     * @param gameId The game ID to request state for
+     */
+    private void sendGameStateRequest(String gameId) {
+        try {
+            // Create and send a game_state_request message
+            Map<String, Object> requestData = new HashMap<>();
+            requestData.put("type", "game_state_request");
+            requestData.put("game_id", gameId);
+            requestData.put("timestamp", System.currentTimeMillis());
+            
+            // Convert to JSON and send via WebSocket
+            Moshi moshi = new Moshi.Builder().build();
+            JsonAdapter<Map<String, Object>> adapter = moshi.adapter(
+                Types.newParameterizedType(Map.class, String.class, Object.class));
+            String jsonRequest = adapter.toJson(requestData);
+            
+            webSocketService.sendMessage(jsonRequest);
+            Log.d("GameRepository", "📤 Sent explicit game state request for: " + gameId);
+        } catch (Exception e) {
+            Log.e("GameRepository", "⚠️ Failed to send game state request: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Set up a retry mechanism for game state requests
+     *
+     * @param gameId The game ID to request state for
+     * @param maxRetries Maximum number of retries
+     */
+    private void setupGameStateRetryMechanism(String gameId, int maxRetries) {
+        // Create a handler for the main thread
+        Handler handler = new Handler(Looper.getMainLooper());
+        
+        // Schedule the first retry check
+        handler.postDelayed(() -> checkAndRetryGameStateRequest(gameId, 1, maxRetries, handler), 3000);
+    }
+    
+    /**
+     * Check if game data is received and retry if needed
+     * @param gameId The game ID
+     * @param currentRetry Current retry count
+     * @param maxRetries Maximum retries allowed
+     * @param handler Handler for scheduling next retry
+     */
+    private void checkAndRetryGameStateRequest(String gameId, int currentRetry, int maxRetries, Handler handler) {
+        // Check if we've received the game data yet
+        if (currentGame.getValue() == null) {
+            Log.w("GameRepository", "⚠️ Still waiting for game data after timeout, retry #" + currentRetry);
+            
+            // Send another request
+            sendGameStateRequest(gameId);
+            
+            // Schedule another retry if we haven't reached the maximum
+            if (currentRetry < maxRetries) {
+                handler.postDelayed(() -> 
+                    checkAndRetryGameStateRequest(gameId, currentRetry + 1, maxRetries, handler), 
+                    3000); // 3 second delay between retries
+            } else {
+                Log.e("GameRepository", "❌ Maximum retries reached for game state request: " + gameId);
+            }
+        } else {
+            Log.d("GameRepository", "✅ Game data received successfully after " + (currentRetry - 1) + " retries");
+        }
     }
     
     /**
@@ -648,6 +559,138 @@ public class GameRepository extends BaseRepository {
      */
     public LiveData<Integer> getTimeRemaining() {
         return timeRemaining;
+    }
+    
+    private void handleGameStarted(Game game, GameStateMessage.GamePayload payload) {
+        Log.i("GameRepository", "Game started event for game: " + game.getGameId());
+        
+        // Update game state
+        game.setGameState(Game.GameState.ACTIVE);
+        
+        // Update time remaining if available
+        if (payload.getTimeRemainingSeconds() > 0) {
+            timeRemaining.postValue(payload.getTimeRemainingSeconds());
+        } else if (game.getRoundDurationSeconds() > 0) {
+            timeRemaining.postValue(game.getRoundDurationSeconds());
+        }
+        
+        // Add system message
+        addSystemChatMessage("Game started!");
+        
+        // Update current game
+        currentGame.postValue(game);
+    }
+    
+    /**
+     * Handle round started event
+     */
+    private void handleRoundStarted(Game game, GameStateMessage.GamePayload payload) {
+        Log.i("GameRepository", "Round started event for game: " + game.getGameId() + 
+               ", round: " + game.getCurrentRound());
+        
+        // Update time remaining
+        if (payload.getTimeRemainingSeconds() > 0) {
+            timeRemaining.postValue(payload.getTimeRemainingSeconds());
+        } else if (game.getRoundDurationSeconds() > 0) {
+            timeRemaining.postValue(game.getRoundDurationSeconds());
+        }
+        
+        // Add system message
+        String drawerName = game.getCurrentDrawer() != null ? 
+                game.getCurrentDrawer().getUsername() : "Unknown player";
+        addSystemChatMessage("Round " + game.getCurrentRound() + 
+                " started! " + drawerName + " is drawing.");
+        
+        // Update current game
+        currentGame.postValue(game);
+    }
+    
+    /**
+     * Handle drawing update event
+     */
+    private void handleDrawingUpdate(Game game, GameStateMessage.GamePayload payload) {
+        if (payload.getDrawingPaths() != null) {
+            drawingPaths.postValue(payload.getDrawingPaths());
+            Log.d("GameRepository", "Updated drawing paths");
+        }
+    }
+    
+    /**
+     * Handle guess submitted event
+     */
+    private void handleGuessSubmitted(Game game, GameStateMessage.GamePayload payload) {
+        // Update player scores if available
+        if (payload.getPlayerScores() != null) {
+            game.setPlayerScores(payload.getPlayerScores());
+        }
+        
+        // Update current game
+        currentGame.postValue(game);
+    }
+    
+    /**
+     * Handle round ended event
+     */
+    private void handleRoundEnded(Game game, GameStateMessage.GamePayload payload) {
+        Log.i("GameRepository", "Round ended event for game: " + game.getGameId() + 
+               ", round: " + game.getCurrentRound());
+        
+        // Update player scores if available
+        if (payload.getPlayerScores() != null) {
+            game.setPlayerScores(payload.getPlayerScores());
+        }
+        
+        // Add system message
+        addSystemChatMessage("Round " + game.getCurrentRound() + " ended!");
+        
+        // Update current game
+        currentGame.postValue(game);
+    }
+    
+    /**
+     * Handle game ended event
+     */
+    private void handleGameEnded(Game game, GameStateMessage.GamePayload payload) {
+        Log.i("GameRepository", "Game ended event for game: " + game.getGameId());
+        
+        // Update game state
+        game.setGameState(Game.GameState.FINISHED);
+        
+        // Update player scores if available
+        if (payload.getPlayerScores() != null) {
+            game.setPlayerScores(payload.getPlayerScores());
+        }
+        
+        // Add system message
+        addSystemChatMessage("Game ended!");
+        
+        // Update current game
+        currentGame.postValue(game);
+    }
+    
+    /**
+     * Handle generic game update event
+     */
+    private void handleGenericUpdate(Game game, GameStateMessage.GamePayload payload) {
+        Log.d("GameRepository", "Generic game update for game: " + game.getGameId());
+        
+        // Update time remaining if available
+        if (payload.getTimeRemainingSeconds() > 0) {
+            timeRemaining.postValue(payload.getTimeRemainingSeconds());
+        }
+        
+        // Update drawings if available
+        if (payload.getDrawings() != null) {
+            game.setCurrentRoundDrawings(payload.getDrawings());
+        }
+        
+        // Update player scores if available
+        if (payload.getPlayerScores() != null) {
+            game.setPlayerScores(payload.getPlayerScores());
+        }
+        
+        // Update current game
+        currentGame.postValue(game);
     }
     
     /**

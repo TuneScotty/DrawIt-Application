@@ -479,30 +479,14 @@ public class LobbyDetailFragment extends Fragment implements WebSocketService.Lo
                     }
                     playerAdapter.setHostUsername(fallbackName);
                 }
-                
-                // Host text is now set directly in the API response handler
-                
-                // Update host UI based on whether current user is host
                 updateHostUI(isHost);
                 binding.btnStartGame.setBackgroundColor(getResources().getColor(R.color.accent, null));
                 binding.btnStartGame.setTextColor(0xFFFFFFFF);
-                
-                if (activity.getSupportActionBar() != null) {
-                    if (lobby.isLocked()) {
-                        activity.getSupportActionBar().setSubtitle(getString(R.string.lobby_locked));
-                    } else {
-                        activity.getSupportActionBar().setSubtitle(null);
-                    }
-                }
             } else {
-                // If lobby is null, keep showing loading indicator
                 binding.progressBar.setVisibility(View.VISIBLE);
-                
-                // No lobby data yet
             }
         });
         
-        // Observe lobby events for game start and leave events
         lobbyViewModel.getLobbyEvent().observe(getViewLifecycleOwner(), lobbyEvent -> {
             if (lobbyEvent == null) {
                 Log.d(TAG, "LobbyDetailFragment: lobbyEvent is null");

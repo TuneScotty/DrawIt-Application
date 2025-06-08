@@ -228,31 +228,21 @@
                 android:layout_marginTop="24dp"
                 android:text="@string/update_profile"
                 app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintHorizontal_bias="0.0"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/card_statistics" />
-
-            <Button
-                android:id="@+id/btn_change_password"
-                style="@style/DrawIt.Button.Outlined"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/change_password"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/btn_update_profile" />
 
             <Button
                 android:id="@+id/btn_logout"
                 style="@style/DrawIt.Button.Text"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
                 android:text="@string/logout"
                 android:textColor="@color/error"
                 app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintHorizontal_bias="0.0"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/btn_change_password" />
+                tools:layout_editor_absoluteY="763dp" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </ScrollView>

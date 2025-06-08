@@ -1,0 +1,302 @@
+@startuml DrawIt Application Architecture
+
+' Define styles for different components
+skinparam class {
+  BackgroundColor<<View>> LightGreen
+  BackgroundColor<<ViewModel>> LightBlue
+  BackgroundColor<<Repository>> LightSalmon
+  BackgroundColor<<API>> LightYellow
+  BackgroundColor<<Util>> LightGray
+}
+
+skinparam package {
+  BackgroundColor White
+  BorderColor Black
+}
+
+' Package definitions
+package "View Layer" {
+  ' Authentication Views
+  class LoginFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +handleLogin()
+    --
+    Handles user authentication
+  }
+  
+  class RegisterFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +handleRegistration()
+    --
+    Manages new user registration
+  }
+  
+  class ProfileFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +updateProfile()
+    --
+    Shows user profile information
+  }
+  
+  ' Lobby Views
+  class LobbiesFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +createLobby()
+    +joinLobby()
+    --
+    Lists available game lobbies
+  }
+  
+  class LobbyDetailFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +startGame()
+    +leaveLobby()
+    --
+    Shows lobby details and players
+  }
+  
+  ' Game Views
+  class GameFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    +handleDrawing()
+    +submitGuess()
+    +sendChatMessage()
+    --
+    Main game screen with drawing canvas
+    and chat functionality
+  }
+  
+  class GameResultsFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    --
+    Displays final game scores
+  }
+  
+  ' Archive Views
+  class DrawingArchiveFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    --
+    Lists saved drawings
+  }
+  
+  class DrawingDetailFragment <<View>> {
+    +onCreateView()
+    +onViewCreated()
+    --
+    Shows drawing details
+  }
+}
+
+package "ViewModel Layer" {
+  class AuthViewModel <<ViewModel>> {
+    +login()
+    +register()
+    +logout()
+    --
+    Manages authentication state
+  }
+  
+  class LobbyViewModel <<ViewModel>> {
+    +getLobbies()
+    +createLobby()
+    +joinLobby()
+    +leaveLobby()
+    +startGame()
+    --
+    Manages lobby operations
+  }
+  
+  class GameViewModel <<ViewModel>> {
+    +joinGame()
+    +submitGuess()
+    +sendDrawingUpdate()
+    +sendChatMessage()
+    --
+    Handles game state and actions
+  }
+  
+  class DrawingArchiveViewModel <<ViewModel>> {
+    +getDrawings()
+    +getDrawingDetails()
+    --
+    Manages drawing archive
+  }
+}
+
+package "Repository Layer" {
+  class UserRepository <<Repository>> {
+    +login()
+    +register()
+    +getProfile()
+    +updateProfile()
+    --
+    Manages user data
+  }
+  
+  class LobbyRepository <<Repository>> {
+    +getLobbies()
+    +createLobby()
+    +joinLobby()
+    +leaveLobby()
+    --
+    Handles lobby operations
+  }
+  
+  class GameRepository <<Repository>> {
+    +joinGame()
+    +startGame()
+    +submitGuess()
+    +sendDrawingUpdate()
+    +sendChatMessage()
+    --
+    Manages game state
+  }
+  
+  class DrawingRepository <<Repository>> {
+    +saveDrawing()
+    +getDrawings()
+    +getDrawingById()
+    --
+    Handles drawing storage
+  }
+}
+
+package "API Layer" {
+  class ApiService <<API>> {
+    +login()
+    +register()
+    +getLobbies()
+    +createLobby()
+    +startGame()
+    --
+    REST API communication
+  }
+  
+  class WebSocketService <<API>> {
+    +connect()
+    +disconnect()
+    +sendMessage()
+    +setCallback()
+    --
+    Real-time WebSocket communication
+  }
+}
+
+package "Utility Layer" {
+  class WebSocketMessageConverter <<Util>> {
+    +convertToLobby()
+    +convertToGame()
+    +parseChatMessage()
+    +parseGameState()
+    --
+    Converts WebSocket messages to model objects
+  }
+  
+  class DrawingUtils <<Util>> {
+    +serializeDrawing()
+    +deserializeDrawing()
+    --
+    Drawing serialization utilities
+  }
+}
+
+' Define relationships
+LoginFragment --> AuthViewModel
+RegisterFragment --> AuthViewModel
+ProfileFragment --> AuthViewModel
+AuthViewModel --> UserRepository
+UserRepository --> ApiService
+UserRepository --> WebSocketService
+
+LobbiesFragment --> LobbyViewModel
+LobbyDetailFragment --> LobbyViewModel
+LobbyViewModel --> LobbyRepository
+LobbyRepository --> ApiService
+LobbyRepository --> WebSocketService
+
+GameFragment --> GameViewModel
+GameResultsFragment --> GameViewModel
+GameViewModel --> GameRepository
+GameRepository --> ApiService
+GameRepository --> WebSocketService
+GameRepository ..> WebSocketMessageConverter
+
+DrawingArchiveFragment --> DrawingArchiveViewModel
+DrawingDetailFragment --> DrawingArchiveViewModel
+DrawingArchiveViewModel --> DrawingRepository
+DrawingRepository --> ApiService
+
+WebSocketService ..> WebSocketMessageConverter
+
+@enduml
+
+@startuml DrawIt Screen Flow
+
+skinparam rectangle {
+  BackgroundColor<<Auth>> LightBlue
+  BackgroundColor<<Lobby>> LightGreen
+  BackgroundColor<<Game>> LightSalmon
+  BackgroundColor<<Archive>> LightYellow
+}
+
+' Authentication Flow
+rectangle "LoginFragment" as login <<Auth>>
+note bottom of login: Entry point of the application
+
+rectangle "RegisterFragment" as register <<Auth>>
+
+' Main App Flow
+rectangle "LobbiesFragment" as lobbies <<Lobby>>
+note bottom of lobbies: Main hub for game lobbies
+
+rectangle "LobbyDetailFragment" as lobbyDetail <<Lobby>>
+note bottom of lobbyDetail: Shows lobby details and players
+
+rectangle "ProfileFragment" as profile <<Auth>>
+note bottom of profile: User profile management
+
+' Drawing Archive Flow
+rectangle "DrawingArchiveFragment" as drawingArchive <<Archive>>
+note bottom of drawingArchive: Browse saved drawings
+
+rectangle "DrawingDetailFragment" as drawingDetail <<Archive>>
+note bottom of drawingDetail: View specific drawing details
+
+' Game Flow
+rectangle "GameFragment" as game <<Game>>
+note bottom of game: Active gameplay with drawing and guessing
+
+rectangle "GameResultsFragment" as gameResults <<Game>>
+note bottom of gameResults: Shows final game scores
+
+' Define navigation paths
+login --> register : Register new account
+register --> login : Back to login
+login --> lobbies : Login successful
+register --> lobbies : Registration successful
+
+lobbies --> lobbyDetail : Select lobby
+lobbies --> profile : View profile
+lobbies --> drawingArchive : View drawing archive
+
+lobbyDetail --> game : Start/Join game
+game --> gameResults : Game ends
+gameResults --> lobbies : Return to lobbies
+
+drawingArchive --> drawingDetail : Select drawing
+profile --> login : Logout
+profile --> lobbies : Back to lobbies
+
+' Define start point
+note "App Start" as start
+start --> login
+
+@enduml

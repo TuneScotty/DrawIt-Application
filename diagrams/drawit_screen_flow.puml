@@ -1,0 +1,63 @@
+@startuml DrawIt Screen Flow
+!pragma layout smetana
+
+skinparam rectangle {
+  BackgroundColor<<Auth>> LightBlue
+  BackgroundColor<<Lobby>> LightGreen
+  BackgroundColor<<Game>> LightSalmon
+  BackgroundColor<<Archive>> LightYellow
+}
+
+' Authentication Flow
+rectangle "LoginFragment" as login <<Auth>>
+note bottom of login: Entry point of the application
+
+rectangle "RegisterFragment" as register <<Auth>>
+
+' Main App Flow
+rectangle "LobbiesFragment" as lobbies <<Lobby>>
+note bottom of lobbies: Main hub for game lobbies
+
+rectangle "LobbyDetailFragment" as lobbyDetail <<Lobby>>
+note bottom of lobbyDetail: Shows lobby details and players
+
+rectangle "ProfileFragment" as profile <<Auth>>
+note bottom of profile: User profile management
+
+' Drawing Archive Flow
+rectangle "DrawingArchiveFragment" as drawingArchive <<Archive>>
+note bottom of drawingArchive: Browse saved drawings
+
+rectangle "DrawingDetailFragment" as drawingDetail <<Archive>>
+note bottom of drawingDetail: View specific drawing details
+
+' Game Flow
+rectangle "GameFragment" as game <<Game>>
+note bottom of game: Active gameplay with drawing and guessing
+
+rectangle "GameResultsFragment" as gameResults <<Game>>
+note bottom of gameResults: Shows final game scores
+
+' Define navigation paths
+login --> register : Register new account
+register --> login : Back to login
+login --> lobbies : Login successful
+register --> lobbies : Registration successful
+
+lobbies --> lobbyDetail : Select lobby
+lobbies --> profile : View profile
+lobbies --> drawingArchive : View drawing archive
+
+lobbyDetail --> game : Start/Join game
+game --> gameResults : Game ends
+gameResults --> lobbies : Return to lobbies
+
+drawingArchive --> drawingDetail : Select drawing
+profile --> login : Logout
+profile --> lobbies : Back to lobbies
+
+' Define start point
+note "App Start" as start
+start --> login
+
+@enduml

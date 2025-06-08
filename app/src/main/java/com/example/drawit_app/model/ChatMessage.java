@@ -9,13 +9,16 @@ public class ChatMessage {
         PLAYER_MESSAGE,  // Regular message from a player
         SYSTEM_MESSAGE,  // System notification
         CORRECT_GUESS,   // Correct word guess
-        CLOSE_GUESS      // Close to the correct word
+        CLOSE_GUESS,     // Close to the correct word
+        USER             // User message (compatibility with server messages)
     }
     
     private User sender;
     private String message;
     private MessageType type;
     private long timestamp;
+    private String gameId;
+    private String messageId;
     
     public ChatMessage() {
         this.timestamp = System.currentTimeMillis();
@@ -58,5 +61,21 @@ public class ChatMessage {
     
     public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
+    }
+    
+    public String getGameId() {
+        return gameId;
+    }
+    
+    public void setGameId(String gameId) {
+        this.gameId = gameId;
+    }
+    
+    public String getMessageId() {
+        return messageId;
+    }
+    
+    public void setMessageId(String messageId) {
+        this.messageId = messageId;
     }
 }

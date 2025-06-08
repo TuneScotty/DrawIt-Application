@@ -13,7 +13,7 @@ A real-time multiplayer drawing and guessing game for Android where players take
 
 ## Tech Stack
 
-- **Language**: Java 17
+- **Language**: Java 11
 - **Architecture**: MVVM with Repository Pattern
 - **Networking**:
   - WebSockets for real-time game communication

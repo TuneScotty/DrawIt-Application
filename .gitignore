@@ -108,7 +108,7 @@ GoogleService-Info.plist
 firebase-debug.log
 
 # Server
-@server/node_modules
+server/node_modules
 
 # Temp files
 tmp/

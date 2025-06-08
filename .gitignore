@@ -109,6 +109,8 @@ firebase-debug.log
 
 # Server
 server/node_modules
+server/package-lock.json
+server/.env
 
 # Temp files
 tmp/

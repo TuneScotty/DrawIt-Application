@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # MongoDB service
+  mongodb:
+    image: mongo:6
+    container_name: drawit-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+    restart: unless-stopped
+    networks:
+      - drawit-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Node.js API server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drawit-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/admin
+      - JWT_SECRET=ad76b975e71c7a51e3d6888d369a9d085c41d936017b8d5ca5f6efc19d96b223
+      - PORT=8080
+    restart: unless-stopped
+    networks:
+      - drawit-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  drawit-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local

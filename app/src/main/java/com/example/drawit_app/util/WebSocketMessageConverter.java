@@ -152,82 +152,177 @@ public class WebSocketMessageConverter {
                 User player = convertToUser(playerObj);
                 if (player != null) {
                     players.add(player);
-                    // Initialize player score or use existing score if available
-                    if (gameMap.containsKey("playerScores") && gameMap.get("playerScores") instanceof Map) {
-                        Map<?, ?> scoresMap = (Map<?, ?>) gameMap.get("playerScores");
-                        if (scoresMap.containsKey(player.getUserId())) {
-                            try {
-                                Object scoreObj = scoresMap.get(player.getUserId());
-                                if (scoreObj instanceof Number) {
-                                    playerScores.put(player.getUserId(), ((Number) scoreObj).floatValue());
-                                } else {
-                                    playerScores.put(player.getUserId(), 0.0f);
-                                }
-                            } catch (Exception e) {
-                                Log.e(TAG, "Error parsing player score: " + e.getMessage());
-                                playerScores.put(player.getUserId(), 0.0f);
-                            }
-                        } else {
-                            playerScores.put(player.getUserId(), 0.0f);
-                        }
-                    } else {
-                        playerScores.put(player.getUserId(), 0.0f);
-                    }
+                    // Initialize player score to 0
+                    playerScores.put(player.getUserId(), 0.0f);
                 }
             }
             
             if (!players.isEmpty()) {
                 Log.d(TAG, "\u2705 Extracted " + players.size() + " players from game object");
                 game.setPlayers(players);
+                
+                // Process player scores if available in array format
+                if (gameMap.containsKey("playerScores")) {
+                    Object scoresObj = gameMap.get("playerScores");
+                    
+                    // Handle array format (from the actual API)
+                    if (scoresObj instanceof List) {
+                        List<?> scoresList = (List<?>) scoresObj;
+                        for (Object scoreObj : scoresList) {
+                            if (scoreObj instanceof Map) {
+                                Map<?, ?> scoreMap = (Map<?, ?>) scoreObj;
+                                String userId = null;
+                                Float score = 0.0f;
+                                
+                                // Extract userId
+                                if (scoreMap.containsKey("userId")) {
+                                    userId = scoreMap.get("userId").toString();
+                                }
+                                
+                                // Extract score
+                                if (scoreMap.containsKey("score") && scoreMap.get("score") instanceof Number) {
+                                    score = ((Number) scoreMap.get("score")).floatValue();
+                                }
+                                
+                                if (userId != null) {
+                                    playerScores.put(userId, score);
+                                    Log.d(TAG, "\ud83d\udcb0 Set player score: " + userId + " = " + score);
+                                }
+                            }
+                        }
+                    }
+                    // Handle map format (alternative format)
+                    else if (scoresObj instanceof Map) {
+                        Map<?, ?> scoresMap = (Map<?, ?>) scoresObj;
+                        for (Object key : scoresMap.keySet()) {
+                            String userId = key.toString();
+                            Object value = scoresMap.get(key);
+                            
+                            if (value instanceof Number) {
+                                playerScores.put(userId, ((Number) value).floatValue());
+                                Log.d(TAG, "\ud83d\udcb0 Set player score from map: " + userId + " = " + ((Number) value).floatValue());
+                            }
+                        }
+                    }
+                }
+                
                 game.setPlayerScores(playerScores);
             }
         }
         
-        // Extract current drawer
+        // Extract current drawer with improved handling for all formats
+        boolean drawerAssigned = false;
+        
+        // First try to get drawer from currentDrawerId field
         if (gameMap.containsKey("currentDrawerId")) {
             String drawerId = gameMap.get("currentDrawerId").toString();
             game.setCurrentDrawerId(drawerId);
+            Log.d(TAG, "🎮 Found currentDrawerId: " + drawerId);
             
             // Find the drawer in the players list
             List<User> players = game.getPlayers();
             if (players != null) {
                 for (User player : players) {
-                    if (player.getUserId().equals(drawerId)) {
+                    if (player.getUserId() != null && player.getUserId().equals(drawerId)) {
                         game.setCurrentDrawer(player);
-                        Log.d(TAG, "\u2705 Set current drawer: " + player.getUsername());
+                        Log.d(TAG, "✅ Set current drawer from ID: " + player.getUsername());
+                        drawerAssigned = true;
                         break;
                     }
                 }
             }
+        }
+        
+        // Then try to get drawer from currentDrawer field if not already assigned
+        if (!drawerAssigned && gameMap.containsKey("currentDrawer")) {
+            Object drawerObj = gameMap.get("currentDrawer");
             
-            // If we couldn't find the drawer in the players list
-            if (game.getCurrentDrawer() == null && players != null && !players.isEmpty()) {
-                // Default to first player
-                User firstPlayer = players.get(0);
-                game.setCurrentDrawer(firstPlayer);
-                game.setCurrentDrawerId(firstPlayer.getUserId());
-                Log.w(TAG, "\u26a0\ufe0f Could not find drawer with ID " + drawerId + ", defaulting to first player: " + firstPlayer.getUsername());
+            // Handle case where currentDrawer is a Map (user object)
+            if (drawerObj instanceof Map) {
+                Map<?, ?> drawerMap = (Map<?, ?>) drawerObj;
+                User drawer = convertToUser(drawerMap);
+                if (drawer != null && drawer.getUserId() != null) {
+                    game.setCurrentDrawer(drawer);
+                    game.setCurrentDrawerId(drawer.getUserId());
+                    Log.d(TAG, "✅ Set current drawer from map: " + drawer.getUsername());
+                    drawerAssigned = true;
+                }
+            } 
+            // Handle case where currentDrawer is a String (user ID)
+            else if (drawerObj instanceof String) {
+                String drawerId = (String) drawerObj;
+                game.setCurrentDrawerId(drawerId);
+                Log.d(TAG, "✅ Set current drawer ID from string: " + drawerId);
+                
+                // Find the drawer in the players list
+                List<User> players = game.getPlayers();
+                if (players != null && !players.isEmpty()) {
+                    for (User player : players) {
+                        if (player.getUserId() != null && player.getUserId().equals(drawerId)) {
+                            game.setCurrentDrawer(player);
+                            Log.d(TAG, "✅ Found drawer in players list: " + player.getUsername());
+                            drawerAssigned = true;
+                            break;
+                        }
+                    }
+                }
             }
-        } else if (gameMap.containsKey("currentDrawer") && gameMap.get("currentDrawer") instanceof Map) {
-            // Extract drawer directly from the currentDrawer field
-            Map<?, ?> drawerMap = (Map<?, ?>) gameMap.get("currentDrawer");
-            User drawer = convertToUser(drawerMap);
-            if (drawer != null) {
-                game.setCurrentDrawer(drawer);
-                game.setCurrentDrawerId(drawer.getUserId());
-                Log.d(TAG, "\u2705 Set current drawer from currentDrawer field: " + drawer.getUsername());
+        }
+        
+        // If drawer still not assigned, try to find it from the round data
+        if (!drawerAssigned && gameMap.containsKey("rounds")) {
+            try {
+                Object roundsObj = gameMap.get("rounds");
+                if (roundsObj instanceof List) {
+                    List<?> rounds = (List<?>) roundsObj;
+                    if (!rounds.isEmpty() && rounds.get(0) instanceof Map) {
+                        Map<?, ?> currentRound = (Map<?, ?>) rounds.get(0);
+                        if (currentRound.containsKey("drawerId")) {
+                            String drawerId = currentRound.get("drawerId").toString();
+                            game.setCurrentDrawerId(drawerId);
+                            Log.d(TAG, "✅ Set current drawer ID from rounds data: " + drawerId);
+                            
+                            // Find the drawer in the players list
+                            List<User> players = game.getPlayers();
+                            if (players != null && !players.isEmpty()) {
+                                for (User player : players) {
+                                    if (player.getUserId() != null && player.getUserId().equals(drawerId)) {
+                                        game.setCurrentDrawer(player);
+                                        Log.d(TAG, "✅ Found drawer from rounds data: " + player.getUsername());
+                                        drawerAssigned = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error extracting drawer from rounds data: " + e.getMessage());
             }
-        } else {
-            // No drawer specified, default to first player if available
+        }
+        
+        // If still no drawer assigned, default to first player if available
+        if (!drawerAssigned) {
             List<User> players = game.getPlayers();
             if (players != null && !players.isEmpty()) {
                 User firstPlayer = players.get(0);
-                game.setCurrentDrawer(firstPlayer);
-                game.setCurrentDrawerId(firstPlayer.getUserId());
-                Log.w(TAG, "\u26a0\ufe0f No drawer specified in game data, defaulting to first player: " + firstPlayer.getUsername());
-            } else {
-                Log.e(TAG, "\u274c No drawer specified and no players available!");
+                if (firstPlayer.getUserId() != null) {
+                    game.setCurrentDrawer(firstPlayer);
+                    game.setCurrentDrawerId(firstPlayer.getUserId());
+                    Log.w(TAG, "⚠️ No drawer found in game data, defaulting to first player: " + firstPlayer.getUsername());
+                    drawerAssigned = true;
+                }
             }
+        }
+        
+        // Final check - if we still don't have a drawer, log an error
+        if (!drawerAssigned) {
+            Log.e(TAG, "❌ Failed to assign a drawer for this game state!");
+        } else {
+            Log.d(TAG, "✅ Final drawer assignment: " + 
+                  (game.getCurrentDrawer() != null ? game.getCurrentDrawer().getUsername() : "null") + 
+                  ", ID: " + game.getCurrentDrawerId());
         }
         
         return game;

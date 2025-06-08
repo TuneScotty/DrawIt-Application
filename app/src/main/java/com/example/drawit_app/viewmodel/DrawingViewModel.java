@@ -5,12 +5,6 @@ import android.util.Log;
 
 import androidx.lifecycle.LiveData;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
 import androidx.lifecycle.MediatorLiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
@@ -206,9 +200,26 @@ public class DrawingViewModel extends ViewModel {
                 Log.d(TAG, "Successfully joined game " + gameId + ", state: " + game.getState());
                 currentGame.setValue(game);
             } else if (resource.isError()) {
-                Log.e(TAG, "Failed to join game: " + resource.getMessage());
-                gameRepository.handleError(resource.getMessage());
-                _error.postValue("Failed to join game: " + resource.getMessage());
+                String errorMessage = resource.getMessage();
+                Log.e(TAG, "Failed to join game: " + errorMessage);
+                
+                // Handle specific error cases
+                if (errorMessage != null) {
+                    if (errorMessage.contains("Lobby is locked") || errorMessage.contains("Cannot join game - lobby is locked")) {
+                        Log.e(TAG, "🔒 Cannot join game - lobby is locked");
+                        _error.postValue("Cannot join game - lobby is locked");
+                    } else if (errorMessage.contains("Game not found")) {
+                        Log.e(TAG, "🔍 Game not found: " + gameId);
+                        _error.postValue("Game not found");
+                    } else {
+                        _error.postValue("Failed to join game: " + errorMessage);
+                    }
+                } else {
+                    _error.postValue("Failed to join game: Unknown error");
+                }
+                
+                // Pass the error to the repository for system message handling
+                gameRepository.handleError(errorMessage != null ? errorMessage : "Unknown error");
             }
         });
     }

@@ -142,9 +142,116 @@ public class GameRepository extends BaseRepository {
     
     /**
      * Set up WebSocket callback for real-time game updates
+     * This method is used by other parts of the code that don't need specific error handling for game joining
      */
     private void setupWebSocketCallback() {
         webSocketService.setGameUpdateCallback(new WebSocketService.GameUpdateCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                Log.e("GameRepository", "⚠️ WebSocket error: " + errorMessage);
+                handleError(errorMessage);
+            }
+            
+            @Override
+            public void onGameStateChanged(GameStateMessage message) {
+                try {
+                    GameStateMessage.GamePayload payload = message.getGamePayload();
+                    if (payload == null || payload.getGame() == null) {
+                        Log.e("GameRepository", "Invalid game payload received");
+                        return;
+                    }
+                    
+                    String event = payload.getEvent();
+                    final Game updatedGame = messageConverter.convertToGame(payload.getGame());
+                    String gameId = updatedGame.getGameId();
+                    
+                    Log.d("GameRepository", "Game event received: " + event + " for game " + gameId);
+                    
+                    // Handle specific game events
+                    if (event == null) {
+                        handleGenericUpdate(updatedGame, payload);
+                    } else if (event.equals("started")) {
+                        handleGameStarted(updatedGame, payload);
+                    } else if (event.equals("round_started")) {
+                        handleRoundStarted(updatedGame, payload);
+                    } else if (event.equals("drawing_update")) {
+                        handleDrawingUpdate(updatedGame, payload);
+                    } else if (event.equals("guess_submitted")) {
+                        handleGuessSubmitted(updatedGame, payload);
+                    } else if (event.equals("round_ended")) {
+                        handleRoundEnded(updatedGame, payload);
+                    } else if (event.equals("game_ended")) {
+                        handleGameEnded(updatedGame, payload);
+                    } else {
+                        handleGenericUpdate(updatedGame, payload);
+                    }
+                    
+                    // Move database operations to a background thread
+                    executor.execute(() -> {
+                        try {
+                            // Always update the local database with the latest game state
+                            Log.d("GameRepository", " Saving game data to local database: " + gameId);
+                            gameDao.insert(updatedGame);
+                            Log.d("GameRepository", " Game data saved successfully: " + gameId);
+                        } catch (Exception e) {
+                            Log.e("GameRepository", " Error saving game data: " + e.getMessage(), e);
+                        }
+                    });
+                    
+                } catch (Exception e) {
+                    Log.e("GameRepository", "Error processing game state: " + e.getMessage(), e);
+                }
+            }
+            
+            @Override
+            public void onChatMessageReceived(ChatMessage chatMessage) {
+                if (chatMessage != null) {
+                    Log.d("GameRepository", "Chat message received: " + chatMessage.getMessage());
+                    List<ChatMessage> currentMessages = chatMessages.getValue();
+                    if (currentMessages == null) {
+                        currentMessages = new ArrayList<>();
+                    }
+
+                    currentMessages.add(chatMessage);
+                    chatMessages.postValue(new ArrayList<>(currentMessages));
+                }
+            }
+        });
+    }
+    
+    /**
+     * Set up WebSocket callback for real-time game updates with specific error handling for game join failures
+     * @param result The LiveData result to update with error states
+     * @param gameId The game ID being joined
+     */
+    private void setupWebSocketCallbackWithErrorHandling(MutableLiveData<Resource<Game>> result, String gameId) {
+        webSocketService.setGameUpdateCallback(new WebSocketService.GameUpdateCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                Log.e("GameRepository", "⚠️ WebSocket error received: " + errorMessage);
+                
+                // Check for specific error messages related to joining games
+                if (errorMessage.contains("Lobby is locked") || errorMessage.contains("Server error: Lobby is locked")) {
+                    Log.e("GameRepository", "🔒 Cannot join game - lobby is locked");
+                    result.postValue(Resource.error("Cannot join game - lobby is locked", null));
+                    
+                    // Add a system message to inform the user
+                    addSystemChatMessage("Cannot join game - the lobby is locked. The game may have already started.");
+                } else if (errorMessage.contains("Game not found") || errorMessage.contains("Server error: Game not found")) {
+                    Log.e("GameRepository", "🔍 Game not found: " + gameId);
+                    result.postValue(Resource.error("Game not found", null));
+                    
+                    // Add a system message to inform the user
+                    addSystemChatMessage("Game not found. It may have been deleted or never existed.");
+                } else {
+                    // Handle other errors
+                    Log.e("GameRepository", "❌ Error joining game: " + errorMessage);
+                    result.postValue(Resource.error("Error joining game: " + errorMessage, null));
+                    
+                    // Add a system message with the error
+                    addSystemChatMessage("Error joining game: " + errorMessage);
+                }
+            }
             @Override
             public void onGameStateChanged(GameStateMessage message) {
                 try {
@@ -202,28 +309,22 @@ public class GameRepository extends BaseRepository {
                     Log.e("GameRepository", "Received null chat message");
                     return;
                 }
-                
-                Log.d("GameRepository", "📨 Chat message received: " + 
-                      (chatMessage.getMessage() != null ? chatMessage.getMessage() : "<empty>") + 
-                      " from " + (chatMessage.getSender() != null ? chatMessage.getSender().getUsername() : "unknown"));
-                
+
+                Log.d("GameRepository", "📨 Chat message received: " +
+                        (chatMessage.getMessage() != null ? chatMessage.getMessage() : "<empty>") +
+                        " from " + (chatMessage.getSender() != null ? chatMessage.getSender().getUsername() : "unknown"));
+
                 // Add to the chat messages list
                 List<ChatMessage> currentMessages = chatMessages.getValue();
                 if (currentMessages == null) {
                     currentMessages = new ArrayList<>();
                 }
-                
+
                 // Add the new message
                 currentMessages.add(chatMessage);
-                
+
                 // Update the LiveData with the new list
                 chatMessages.postValue(new ArrayList<>(currentMessages));
-            }
-            
-            @Override
-            public void onError(String errorMessage) {
-                Log.e("GameRepository", "WebSocket error: " + errorMessage);
-                setupWebSocketCallback();
             }
         });
     }
@@ -421,8 +522,8 @@ public class GameRepository extends BaseRepository {
         
         // Register for game updates via WebSocket
         if (webSocketService != null) {
-            // Set up callback to receive game state updates
-            setupWebSocketCallback();
+            // Set up callback to receive game state updates with error handling for locked lobbies
+            setupWebSocketCallbackWithErrorHandling(result, gameId);
             Log.i("GameRepository", "✅ Registered game update callback for game: " + gameId);
             
             // Set the active game ID in WebSocketService to track this game

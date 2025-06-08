@@ -626,10 +626,33 @@ public class WebSocketService {
                 try {
                     JSONObject jsonObject = new JSONObject(json);
                     String errorMessage = jsonObject.optString("message", "Unknown server error");
-                    Log.e(TAG, "Server error: " + errorMessage);
+                    String errorCode = jsonObject.optString("code", "");
+                    String gameId = jsonObject.optString("game_id", "");
+                    String lobbyId = jsonObject.optString("lobby_id", "");
                     
-                    // Notify callbacks about the error
-                    notifyError("Server error: " + errorMessage);
+                    // Log detailed error information
+                    Log.e(TAG, "Server error: " + errorMessage + 
+                          (errorCode.isEmpty() ? "" : ", code: " + errorCode) + 
+                          (gameId.isEmpty() ? "" : ", game_id: " + gameId) + 
+                          (lobbyId.isEmpty() ? "" : ", lobby_id: " + lobbyId));
+                    
+                    // Format a more specific error message based on the error type
+                    String formattedError;
+                    
+                    if (errorMessage.contains("locked") || errorMessage.contains("Lobby is locked")) {
+                        formattedError = "Cannot join game - the lobby is locked. The game may have already started.";
+                        Log.e(TAG, "🔒 Lobby locked error detected for " + 
+                              (gameId.isEmpty() ? "unknown game" : "game " + gameId));
+                    } else if (errorMessage.contains("not found") || errorMessage.contains("Game not found")) {
+                        formattedError = "Game not found. It may have been deleted or never existed.";
+                        Log.e(TAG, "🔍 Game not found error detected for " + 
+                              (gameId.isEmpty() ? "unknown game" : "game " + gameId));
+                    } else {
+                        formattedError = "Server error: " + errorMessage;
+                    }
+                    
+                    // Notify callbacks about the error with the formatted message
+                    notifyError(formattedError);
                 } catch (Exception e) {
                     Log.e(TAG, "Error processing error message: " + e.getMessage());
                     notifyError("Failed to process server error message");

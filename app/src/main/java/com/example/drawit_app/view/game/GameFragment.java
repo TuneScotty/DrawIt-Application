@@ -433,7 +433,31 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
             if (getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
                     if (isAdded() && getContext() != null) {
-                        Toast.makeText(getContext(), "WebSocket error: " + errorMsg, Toast.LENGTH_SHORT).show();
+                        // Handle specific error messages with clearer user feedback
+                        if (errorMsg.contains("Lobby is locked") || errorMsg.contains("Cannot join game - lobby is locked")) {
+                            // Show a more user-friendly message for locked lobbies
+                            Toast.makeText(getContext(), "Cannot join game - the lobby is locked. The game may have already started.", Toast.LENGTH_LONG).show();
+                            
+                            // Navigate back to the lobbies list
+                            new Handler().postDelayed(() -> {
+                                if (isAdded() && navController != null) {
+                                    navController.navigateUp();
+                                }
+                            }, 1500); // Give user time to read the message before navigating back
+                        } else if (errorMsg.contains("Game not found")) {
+                            // Handle game not found error
+                            Toast.makeText(getContext(), "Game not found. It may have been deleted or never existed.", Toast.LENGTH_LONG).show();
+                            
+                            // Navigate back to the lobbies list
+                            new Handler().postDelayed(() -> {
+                                if (isAdded() && navController != null) {
+                                    navController.navigateUp();
+                                }
+                            }, 1500);
+                        } else {
+                            // Generic error handling
+                            Toast.makeText(getContext(), "Error: " + errorMsg, Toast.LENGTH_SHORT).show();
+                        }
                     }
                 });
             }

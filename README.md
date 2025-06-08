@@ -13,7 +13,7 @@ A real-time multiplayer drawing and guessing game for Android where players take
 
 ## Tech Stack
 
-- **Language**: Java 11
+- **Language**: Java 17
 - **Architecture**: MVVM with Repository Pattern
 - **Networking**:
   - WebSockets for real-time game communication
@@ -74,6 +74,8 @@ The app follows the MVVM (Model-View-ViewModel) architecture pattern with the fo
 - **WebSocket Communication**: Real-time game state updates using OkHttp WebSockets
 - **WebSocketMessageConverter**: Utility for standardized WebSocket message handling between raw JSON and typed model objects
 - **Repository Pattern**: Centralized data management with clear separation of concerns
+  - **DrawingRepository**: Dedicated component for drawing-related operations and synchronization
+  - **GameRepository**: Manages game state, players, and scoring
 - **Dependency Injection**: Hilt provides application-wide dependency management
 
 ## License

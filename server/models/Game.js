@@ -8,8 +8,7 @@ const gameSchema = new mongoose.Schema({
   maxRounds: { type: Number, default: 3 },
   roundDurationSeconds: { type: Number, default: 60 },
   currentDrawer: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  wordToGuess: { type: String, default: '' },  // Default empty string to avoid null
-  timeRemaining: { type: Number, default: 60 },  // Default to round duration
+  wordToGuess: { type: String, default: '' },
   isTransient: { type: Boolean, default: false },
   playerScores: [{
     userId: { type: String },

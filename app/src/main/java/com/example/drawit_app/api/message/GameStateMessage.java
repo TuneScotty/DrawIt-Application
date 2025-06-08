@@ -489,5 +489,28 @@ public class GameStateMessage extends WebSocketMessage {
         public void setWordToGuess(String wordToGuess) {
             this.wordToGuess = wordToGuess;
         }
+        
+        /**
+         * Get message from the payload
+         * @return The message or null if not available
+         */
+        public String getMessage() {
+            // Try to extract message from event or status
+            if (event != null && event.contains(":")) {
+                return event.split(":", 2)[1].trim();
+            }
+            return null;
+        }
+        
+        /**
+         * Get game state from the payload
+         * @return The game state or null if not available
+         */
+        public Game.GameState getGameState() {
+            if (game != null) {
+                return game.getGameState();
+            }
+            return null;
+        }
     }
 }

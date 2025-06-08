@@ -502,10 +502,10 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
             }
         }
         
-        // CRITICAL FIX: Ensure current word is set
+        // Server should provide the word
         if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
-            game.setCurrentWord("apple"); // Default word as fallback
-            Log.d(TAG, "📝 Setting default word to 'apple'");
+            Log.w(TAG, "⚠️ Warning: Server did not provide a word for this round");
+            // We'll wait for the server to provide the word instead of setting a default
         }
         
         // Now we should have both currentUser and currentDrawer set
@@ -551,18 +551,13 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         // Start timer if needed and not already running
         if (game.getRemainingTime() > 0) {
             // Always restart the timer with the current remaining time
-            if (roundTimer != null) {
-                roundTimer.cancel();
-            }
-            startRoundTimer();
+            stopRoundTimer();
+            startRoundTimer(game.getRemainingTime());
             Log.d(TAG, "⏱️ Started round timer with " + game.getRemainingTime() + " seconds");
         } else if (game.getGameState() == Game.GameState.ACTIVE || 
                   game.getGameState() == Game.GameState.DRAWING) {
-            // If game is active but no time is set, use a default time
-            if (roundTimer != null) {
-                roundTimer.cancel();
-            }
-            startRoundTimer();
+            stopRoundTimer();
+            startRoundTimer(0);
             Log.d(TAG, "⏱️ Started round timer with default time");
         } else {
             Log.d(TAG, "⏱️ Not starting timer - game state: " + game.getGameState() + ", time: " + game.getRemainingTime());
@@ -854,7 +849,22 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
     private long lastTimerUpdateTimestamp = 0;
     private static final long TIMER_UPDATE_THRESHOLD_MS = 500; // Minimum time between timer updates
     
-    private void startRoundTimer() {
+    /**
+     * Stops the current round timer if it's running
+     */
+    private void stopRoundTimer() {
+        if (roundTimer != null) {
+            roundTimer.cancel();
+            roundTimer = null;
+            Log.d(TAG, "⏱️ Round timer stopped");
+        }
+    }
+    
+    /**
+     * Starts the round timer with the specified remaining time
+     * @param remainingTimeSeconds Time remaining in seconds, or 0 to use game's round duration
+     */
+    private void startRoundTimer(int remainingTimeSeconds) {
         // Prevent rapid timer restarts by checking timestamp
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastTimerUpdateTimestamp < TIMER_UPDATE_THRESHOLD_MS) {
@@ -864,10 +874,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         lastTimerUpdateTimestamp = currentTime;
         
         // Cancel any existing timer
-        if (roundTimer != null) {
-            roundTimer.cancel();
-            roundTimer = null;
-        }
+        stopRoundTimer();
         
         // Get the current game state
         Game game = drawingViewModel.getCurrentGame().getValue();
@@ -883,7 +890,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         }
         
         // Get the time remaining from game state (in seconds)
-        int timeRemainingSeconds = game.getRemainingTime();
+        int timeRemainingSeconds = remainingTimeSeconds;
         if (timeRemainingSeconds <= 0) {
             // Use round duration if available, otherwise default to 60 seconds
             timeRemainingSeconds = game.getRoundDurationSeconds() > 0 ? 
@@ -972,8 +979,6 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
     // Track the last processed game state message to prevent duplicate processing
     private String lastProcessedGameStateId = null;
     
-
-    
     @Override
     public void onGameStateChanged(GameStateMessage message) {
         // This is called from WebSocketService when game updates are received
@@ -982,11 +987,11 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
             return;
         }
         
-        // CRITICAL FIX: Generate a more reliable message ID based on multiple fields
-        String messageId = message.getGamePayload().getCurrentDrawerId() + "-" + 
-                          message.getGamePayload().getCurrentRound() + "-" + 
-                          message.getGamePayload().getRemainingTime() + "-" + 
-                          message.getGamePayload().getState();
+        // Generate a more reliable message ID based on content to detect duplicates
+        String messageId = message.getGamePayload().getCurrentDrawer().getUsername() + "-" +
+                          message.getGamePayload().getCurrentRound() + "-" +
+                          message.getGamePayload().getTimeRemainingSeconds() + "-" +
+                          message.getGamePayload().getStatus();
         
         // Check if we've already processed this exact message
         if (messageId.equals(lastProcessedGameStateId)) {
@@ -998,208 +1003,113 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
         lastProcessedGameStateId = messageId;
         
         Log.d(TAG, "Game state update received: " + 
-              (message.getGamePayload().getState() != null ? message.getGamePayload().getState() : "NO_STATE"));
+               (message.getGamePayload().getEvent() != null ? message.getGamePayload().getEvent() : "NO_EVENT"));
         
-        // Process game state on UI thread
-        if (getActivity() != null) {
-            getActivity().runOnUiThread(() -> {
-                try {
-                    if (!isAdded()) {
-                        Log.e(TAG, "Cannot update game state - fragment not added");
-                        return;
-                    }
-                    
-                    // Get current game state from ViewModel
-                    Game currentGame = drawingViewModel.getCurrentGame().getValue();
-                    if (currentGame == null) {
-                        // Create new game if none exists
-                        currentGame = new Game(gameId, "", 3, 60);
-                        Log.d(TAG, "Created new game object for state update");
-                    }
-                    
-                    // CRITICAL FIX: Store previous state for comparison
-                    Game.GameState previousState = currentGame.getGameState();
-                    int previousRound = currentGame.getCurrentRound();
-                    String previousDrawerId = currentGame.getCurrentDrawerId();
-                    
-                    // Update game state from message
-                    GamePayload payload = message.getGamePayload();
-                    
-                    // Update basic game properties
-                    currentGame.setGameState(payload.getState());
-                    currentGame.setCurrentRound(payload.getCurrentRound());
-                    currentGame.setTotalRounds(payload.getNumRounds());
-                    currentGame.setRoundDurationSeconds(payload.getRoundDuration());
-                    currentGame.setRemainingTime(payload.getRemainingTime());
-                    
-                    // Update word if available
-                    if (payload.getCurrentWord() != null && !payload.getCurrentWord().isEmpty()) {
-                        currentGame.setCurrentWord(payload.getCurrentWord());
-                        Log.d(TAG, "Updated current word: " + 
-                              (isDrawingTurn() ? payload.getCurrentWord() : "[hidden]"));
-                    }
-                    
-                    // CRITICAL FIX: Improved drawer update logic
-                    String drawerId = payload.getCurrentDrawerId();
-                    if (drawerId != null && !drawerId.isEmpty()) {
-                        // Only update if drawer has changed
-                        if (!drawerId.equals(previousDrawerId)) {
-                            Log.d(TAG, "Drawer changed from " + previousDrawerId + " to " + drawerId);
-                            currentGame.setCurrentDrawerId(drawerId);
-                            
-                            // Find drawer in players list
-                            User drawer = null;
-                            if (currentGame.getPlayers() != null) {
-                                for (User player : currentGame.getPlayers()) {
-                                    if (player.getUserId().equals(drawerId)) {
-                                        drawer = player;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            // If drawer not found in players list but matches current user
-                            if (drawer == null && currentUser != null && 
-                                currentUser.getUserId().equals(drawerId)) {
-                                drawer = currentUser;
-                                Log.d(TAG, "Using current user as drawer: " + currentUser.getUsername());
-                            }
-                            
-                            // If drawer still not found, create placeholder
-                            if (drawer == null) {
-                                drawer = new User();
-                                drawer.setUserId(drawerId);
-                                drawer.setUsername("Player " + 
-                                    drawerId.substring(0, Math.min(4, drawerId.length())));
-                                Log.d(TAG, "Created placeholder drawer: " + drawer.getUsername());
-                            }
-                            
-                            currentGame.setCurrentDrawer(drawer);
-                            Log.d(TAG, "Updated current drawer: " + drawer.getUsername());
-                        }
-                    } else {
-                        Log.w(TAG, "No drawer ID in game state message");
-                    }
-                    
-                    // Update player scores
-                    if (payload.getScores() != null) {
-                        currentGame.setPlayerScores(payload.getScores());
-                    }
-                    
-                    // CRITICAL FIX: Improved drawing paths update logic
-                    if (payload.getDrawingPaths() != null) {
-                        String newPaths = payload.getDrawingPaths();
-                        String currentPaths = currentGame.getDrawingPaths();
-                        
-                        // Only update if paths have changed and aren't empty
-                        if (newPaths != null && !newPaths.isEmpty() && !newPaths.equals(currentPaths)) {
-                            currentGame.setDrawingPaths(newPaths);
-                            
-                            // Only update drawing view if current user is not the drawer
-                            // This prevents overwriting the drawer's own drawing
-                            if (!isDrawingTurn()) {
-                                binding.drawingView.setPathsFromJson(newPaths);
-                                Log.d(TAG, "Updated drawing paths from game state for non-drawer");
-                            } else {
-                                Log.d(TAG, "Skipped updating paths for drawer to prevent overwrite");
-                            }
-                        }
-                    }
-                    
-                    // CRITICAL FIX: Improved round change detection
-                    boolean roundChanged = previousRound != currentGame.getCurrentRound();
-                    boolean stateChanged = previousState != currentGame.getGameState();
-                    
-                    // Clear canvas on round change or when entering drawing state
-                    if (roundChanged || 
-                        (stateChanged && currentGame.getGameState() == Game.GameState.DRAWING)) {
-                        binding.drawingView.clearCanvas();
-                        Log.d(TAG, "Cleared canvas due to round change or new drawing state");
-                    }
-                    
-                    // Update round info in UI
-                    String roundInfo = String.format(Locale.getDefault(), "Round %d/%d", 
-                            currentGame.getCurrentRound(), currentGame.getTotalRounds());
-                    binding.tvRoundInfo.setText(roundInfo);
-                    
-                    // CRITICAL FIX: Improved timer management
-                    boolean shouldRunTimer = currentGame.getRemainingTime() > 0 && 
-                                          (currentGame.getGameState() == Game.GameState.ACTIVE || 
-                                           currentGame.getGameState() == Game.GameState.DRAWING);
-                                           
-                    if (shouldRunTimer) {
-                        // Only start timer if it's not already running with the same duration
-                        startRoundTimer(currentGame.getRemainingTime());
-                    } else {
-                        stopRoundTimer();
-                    }
-                    
-                    // Update the game in ViewModel
-                    drawingViewModel.updateCurrentGame(currentGame);
-                    
-                    // Update drawing permissions based on new game state
-                    updateDrawingPermissions();
-                    
-                    Log.d(TAG, "Successfully processed game state update");
-                    
-                } catch (Exception e) {
-                    Log.e(TAG, "Error processing game state: " + e.getMessage(), e);
-                }
-            });
-        } else {
-            Log.e(TAG, "Cannot process game state - activity is null");
+        // Force UI update on main thread to ensure visibility
+        if (getActivity() == null) {
+            Log.e(TAG, "Cannot update game state - activity is null");
+            return;
         }
-    }
-    if (message == null || message.getGamePayload() == null) {
-        Log.e(TAG, "Received null game state message or payload");
-        return;
-    }
-    
-    // CRITICAL FIX: Prevent duplicate processing of the same message
-    // Use a more reliable message ID based on multiple fields
-    String messageId = message.getGamePayload().getCurrentDrawerId() + "-" + 
-                      message.getGamePayload().getCurrentRound() + "-" + 
-                      message.getGamePayload().getRemainingTime() + "-" + 
-                      message.getGamePayload().getState();
-                      
-    if (messageId.equals(lastProcessedGameStateId)) {
-        Log.d(TAG, "Skipping duplicate game state message: " + messageId);
-        return;
-    }
-    lastProcessedGameStateId = messageId;
-    
-    // Process game state on UI thread
-    if (getActivity() != null) {
-        getActivity().runOnUiThread(() -> {
-            try {
-                // Get current game state from ViewModel
+            
+            getActivity().runOnUiThread(() -> {
+                if (!isAdded()) {
+                    Log.e(TAG, "Cannot update game state - fragment not added");
+                    return;
+                }
+                
+                // Force show game content
+                binding.progressBarGame.setVisibility(View.GONE);
+                binding.gameContentContainer.setVisibility(View.VISIBLE);
+                
+                // Ensure we have a valid game object
                 Game currentGame = drawingViewModel.getCurrentGame().getValue();
                 if (currentGame == null) {
-                    // Create new game if none exists
+                    // Create a new game object if needed
                     currentGame = new Game(gameId, "", 3, 60);
-                    Log.d(TAG, "Created new game object for state update");
+                    Log.d(TAG, "🆕 Created new game object in onGameStateChanged");
+                    
+                    // Initialize with current user if available
+                    if (currentUser != null) {
+                        List<User> players = new ArrayList<>();
+                        players.add(currentUser);
+                        currentGame.setPlayers(players);
+                    }
                 }
                 
-                // CRITICAL FIX: Store previous state for comparison
-                Game.GameState previousState = currentGame.getGameState();
-                int previousRound = currentGame.getCurrentRound();
-                String previousDrawerId = currentGame.getCurrentDrawerId();
+                // Log detailed game state information for debugging
+                Log.d(TAG, "📊 Game state update: " + 
+                      (message.getGamePayload().getEvent() != null ? message.getGamePayload().getEvent() : "NO_EVENT") + 
+                      ", Round: " + message.getGamePayload().getCurrentRound() + "/" + 
+                      message.getGamePayload().getMaxRounds() + 
+                      ", Time: " + message.getGamePayload().getTimeRemainingSeconds() + "s");
                 
                 // Update game state from message
-                GamePayload payload = message.getGamePayload();
+                if (message.getGamePayload().getEvent() != null) {
+                    try {
+                        Game.GameState newState = Game.GameState.valueOf(message.getGamePayload().getEvent());
+                        Game.GameState oldState = currentGame.getGameState();
+                        
+                        // Check if we're transitioning to a new round
+                        boolean isNewRound = (oldState == Game.GameState.FINISHED && 
+                                             newState == Game.GameState.ACTIVE) ||
+                                            (message.getGamePayload().getCurrentRound() > currentGame.getCurrentRound());
+                        
+                        if (isNewRound) {
+                            // Clear the drawing for the new round
+                            binding.drawingView.clearDrawing();
+                            Log.d(TAG, "🔄 New round detected - clearing drawing canvas");
+                            
+                            // Add system message about new round
+                            String roundMessage = "Round " + message.getGamePayload().getCurrentRound() + 
+                                                 " started!";
+                            gameRepository.addSystemChatMessage(roundMessage);
+                        }
+                        
+                        // Update the game state
+                        currentGame.setGameState(newState);
+                        
+                        // Handle timer based on game state
+                        if (newState == Game.GameState.ACTIVE || newState == Game.GameState.DRAWING) {
+                            // Start or restart timer when game is active
+                            int remainingTime = message.getGamePayload().getTimeRemainingSeconds();
+                            startRoundTimer(remainingTime);
+                        } else if (newState == Game.GameState.FINISHED || 
+                                   newState == Game.GameState.WAITING) {
+                            // Cancel timer when round is complete or game is over
+                            stopRoundTimer();
+                        }
+                    } catch (IllegalArgumentException e) {
+                        Log.e(TAG, "Invalid game state received: " + message.getGamePayload().getEvent());
+                    }
+                }
+                    
+                    // Update current round
+                if (message.getGamePayload().getCurrentRound() > 0) {
+                    currentGame.setCurrentRound(message.getGamePayload().getCurrentRound());
+                } else if (currentGame.getCurrentRound() <= 0) {
+                    currentGame.setCurrentRound(1); // Default to round 1 if not set
+                }
                 
-                // Update basic game properties
-                currentGame.setGameState(payload.getState());
-                currentGame.setCurrentRound(payload.getCurrentRound());
-                currentGame.setTotalRounds(payload.getNumRounds());
-                currentGame.setRoundDurationSeconds(payload.getRoundDuration());
-                currentGame.setRemainingTime(payload.getRemainingTime());
+                // Update max rounds
+                if (message.getGamePayload().getMaxRounds() > 0) {
+                    currentGame.setNumRounds(message.getGamePayload().getMaxRounds());
+                } else if (currentGame.getNumRounds() <= 0) {
+                    currentGame.setNumRounds(3); // Default to 3 rounds if not set
+                }
                 
-                // CRITICAL FIX: Only update word if it's not empty and user is drawer
-                String newWord = payload.getCurrentWord();
-                if (newWord != null && !newWord.isEmpty()) {
-                    currentGame.setCurrentWord(newWord);
-                    Log.d(TAG, "Updated current word: " + (isDrawingTurn() ? newWord : "[hidden]"));
+                // Update current drawer if provided
+                if (message.getGamePayload().getCurrentDrawer() != null) {
+                    User drawerFromMessage = message.getGamePayload().getCurrentDrawer();
+                    
+                    // Fix for drawer with display name "You"
+                    if ("You".equals(drawerFromMessage.getUsername()) && drawerFromMessage.getUserId() != null) {
+                        // This is likely the current user, fix the username
+                        Log.d(TAG, "⚠️ Fixing drawer with name 'You' - setting proper user data");
+                        
+                        // Check if this is the current user
+                        if (currentUser != null && currentUser.getUserId().equals(drawerFromMessage.getUserId())) {
+                            // Use the current user object instead
+                            currentGame.setCurrentDrawer(currentUser);
                             Log.d(TAG, "✅ Set current user as drawer: " + currentUser.getUsername());
                         } else {
                             // Try to find the user in the players list
@@ -1239,23 +1149,20 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                 
                 // Force update game state for timer
                 if (message.getGamePayload().getTimeRemainingSeconds() > 0) {
-                    // Cancel any existing timer
-                    if (roundTimer != null) {
-                        roundTimer.cancel();
-                    }
-                        
-                        // Start a new timer
-                        startRoundTimer();
+                    // Start a new timer with the remaining time
+                    stopRoundTimer();
+                    int remainingTime = message.getGamePayload().getTimeRemainingSeconds();
+                    startRoundTimer(remainingTime);
                     }
                     
                     // Update round display using current round and max rounds
                     int currentRound = message.getGamePayload().getCurrentRound() > 0 ? 
-                            message.getGamePayload().getCurrentRound() : 
-                            (currentGame != null ? currentGame.getCurrentRound() : 1);
+                            message.getGamePayload().getCurrentRound() :
+                            currentGame.getCurrentRound();
                     
                     int maxRounds = message.getGamePayload().getMaxRounds() > 0 ? 
-                            message.getGamePayload().getMaxRounds() : 
-                            (currentGame != null ? currentGame.getNumRounds() : 3);
+                            message.getGamePayload().getMaxRounds() :
+                            currentGame.getNumRounds();
                     
                     binding.tvRound.setText("Round: " + currentRound + "/" + maxRounds);
                     
@@ -1305,12 +1212,8 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
                     Log.d("GameFragment", "Updated game state - Round: " + currentRound + "/" + maxRounds + 
                             ", Drawing tools: " + (isDrawingTurn() ? "Visible" : "Hidden"));
                 });
-            } catch (Exception e) {
-                Log.e("GameFragment", "Error processing game update: " + e.getMessage(), e);
             }
-}
-
-
+    
     @Override
     public void onError(String errorMessage) {
         // Handle WebSocket error
@@ -1460,9 +1363,7 @@ public class GameFragment extends Fragment implements WebSocketService.GameUpdat
     public void onDestroyView() {
         super.onDestroyView();
         // Cancel timer
-        if (roundTimer != null) {
-            roundTimer.cancel();
-        }
+        stopRoundTimer();
 
         // Remove WebSocket callback
         drawingViewModel.setGameUpdateCallback(null);

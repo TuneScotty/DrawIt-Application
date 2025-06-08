@@ -115,3 +115,9 @@ server/.env
 # Temp files
 tmp/
 temp/
+
+# Diagrams
+diagrams/
+
+# Books
+Books/

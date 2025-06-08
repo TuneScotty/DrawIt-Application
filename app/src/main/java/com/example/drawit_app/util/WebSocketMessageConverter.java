@@ -68,6 +68,32 @@ public class WebSocketMessageConverter {
     }
     
     // Helper method to extract a Game object from a Map (from raw JSON)
+    /**
+     * Convert raw JSON game data to a Game object
+     * @param jsonData The raw JSON data from the server
+     * @return A Game object parsed from the JSON data
+     */
+    public Game convertGameData(String jsonData) {
+        try {
+            Type mapType = Types.newParameterizedType(Map.class, String.class, Object.class);
+            JsonAdapter<Map<String, Object>> adapter = moshi.adapter(mapType);
+            Map<String, Object> messageMap = adapter.fromJson(jsonData);
+            
+            if (messageMap != null && messageMap.containsKey("game")) {
+                Object gameObj = messageMap.get("game");
+                if (gameObj instanceof Map) {
+                    return extractGameFromMap((Map<?, ?>) gameObj);
+                }
+            }
+            
+            // If we couldn't find a game object, try to parse the entire message as a game
+            return extractGameFromMap(messageMap);
+        } catch (Exception e) {
+            Log.e(TAG, "Error converting game data: " + e.getMessage(), e);
+            return null;
+        }
+    }
+    
     private Game extractGameFromMap(Map<?, ?> gameMap) {
         if (gameMap == null) return null;
         
@@ -132,14 +158,13 @@ public class WebSocketMessageConverter {
         if (gameMap.containsKey("currentWord")) {
             game.setCurrentWord(gameMap.get("currentWord").toString());
         } else {
-            game.setCurrentWord("apple"); // Default word as fallback
-            Log.w(TAG, "⚠️ No current word in game data, using default");
+            Log.w(TAG, "⚠️ No current word in game data from server");
         }
         
         if (gameMap.containsKey("status") && "active".equals(gameMap.get("status"))) {
             game.setGameState(Game.GameState.ACTIVE);
         } else {
-            game.setGameState(Game.GameState.ACTIVE); // Default to ACTIVE
+            game.setGameState(Game.GameState.ACTIVE);
         }
         
         // Extract players
@@ -599,11 +624,9 @@ public class WebSocketMessageConverter {
                             }
                         }
 
-                        // CRITICAL FIX: Ensure current word is set
+                        // Check if server provided a word
                         if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
-                            Log.w(TAG, "⚠️ Game has no current word set! Setting default word.");
-                            game.setCurrentWord("apple"); // Default word as fallback
-                            Log.d(TAG, "Set default word to 'apple'");
+                            Log.w(TAG, "⚠️ Warning: Server did not provide a word for this game state");
                         }
 
                         // Initialize player scores if missing

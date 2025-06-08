@@ -10,6 +10,7 @@ import androidx.lifecycle.MutableLiveData;
 import com.example.drawit_app.data.DrawItDatabase;
 import com.example.drawit_app.data.GameDao;
 import com.example.drawit_app.model.ChatMessage;
+import com.example.drawit_app.model.Drawing;
 import com.example.drawit_app.model.Game;
 
 import com.example.drawit_app.api.ApiService;
@@ -19,6 +20,9 @@ import com.example.drawit_app.util.WebSocketMessageConverter;
 import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -276,43 +280,6 @@ public class GameRepository extends BaseRepository {
     }
     
     /**
-     * Submit a drawing for the current game and round
-     */
-    public void submitDrawing(com.example.drawit_app.model.Drawing drawing) {
-        String token = userRepository.getAuthToken();
-        if (token == null || currentGame.getValue() == null) {
-            return;
-        }
-        
-        // Set game and round information on the drawing
-        Game game = currentGame.getValue();
-        drawing.setGameId(game.getGameId());
-        drawing.setRoundNumber(game.getCurrentRound());
-        drawing.setWord(game.getCurrentWord());
-        
-        // Send via WebSocket for real-time updates
-        webSocketService.sendDrawing(game.getGameId(), drawing);
-        
-        // Also send via REST API for persistence
-        apiService.submitDrawing("Bearer " + token, game.getGameId(), drawing);
-    }
-    
-    /**
-     * Rate a drawing in the current game
-     */
-    public void rateDrawing(String drawingId, float rating) {
-        String token = userRepository.getAuthToken();
-        if (token == null || currentGame.getValue() == null) {
-            return;
-        }
-        
-        Game game = currentGame.getValue();
-        
-        // Send via WebSocket for real-time updates
-        webSocketService.sendRating(game.getGameId(), drawingId, rating);
-    }
-    
-    /**
      * Get the current game the user is in
      */
     public LiveData<Game> getCurrentGame() {
@@ -412,10 +379,27 @@ public class GameRepository extends BaseRepository {
      * @param gameData JSON data for game update
      */
     public void processGameUpdate(String gameData) {
-        // The WebSocketService now handles this through the GameUpdateCallback
-        // This method is kept for backward compatibility
-        Log.d("GameRepository", "Game update received: " + 
-              (gameData != null ? gameData.substring(0, Math.min(20, gameData.length())) + "..." : "null"));
+        Log.d("GameRepository", "Game update received");
+        
+        try {
+            // Use the WebSocketMessageConverter to parse the game data
+            Game updatedGame = messageConverter.convertGameData(gameData);
+            
+            if (updatedGame != null) {
+                // Process the game update (server should provide drawer)
+                ensureGameDataComplete(updatedGame);
+                
+                // Server should provide the word
+                if (updatedGame.getCurrentWord() == null || updatedGame.getCurrentWord().isEmpty()) {
+                    Log.d("GameRepository", "Warning: Server did not provide a word for the game");
+                }
+                
+                // Update the current game
+                currentGame.postValue(updatedGame);
+            }
+        } catch (Exception e) {
+            Log.e("GameRepository", "Error processing game update: " + e.getMessage(), e);
+        }
     }
     
     /**
@@ -562,37 +546,40 @@ public class GameRepository extends BaseRepository {
     }
     
     private void handleGameStarted(Game game, GameStateMessage.GamePayload payload) {
-        Log.i("GameRepository", "Game started event for game: " + game.getGameId());
-        
-        // Update game state
-        game.setGameState(Game.GameState.ACTIVE);
-        
-        // Update time remaining if available
         if (payload.getTimeRemainingSeconds() > 0) {
             timeRemaining.postValue(payload.getTimeRemainingSeconds());
         } else if (game.getRoundDurationSeconds() > 0) {
             timeRemaining.postValue(game.getRoundDurationSeconds());
         }
         
+        // Server should provide the word
+        if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
+            Log.d("GameRepository", "Warning: Server did not provide a word for the game");
+        }
+        
         // Add system message
-        addSystemChatMessage("Game started!");
+        String drawerName = game.getCurrentDrawer() != null ? 
+                game.getCurrentDrawer().getUsername() : "Unknown player";
+        addSystemChatMessage("Round " + game.getCurrentRound() + 
+                " started! " + drawerName + " is drawing.");
         
         // Update current game
         currentGame.postValue(game);
     }
-    
+
     /**
      * Handle round started event
      */
     private void handleRoundStarted(Game game, GameStateMessage.GamePayload payload) {
-        Log.i("GameRepository", "Round started event for game: " + game.getGameId() + 
-               ", round: " + game.getCurrentRound());
-        
-        // Update time remaining
         if (payload.getTimeRemainingSeconds() > 0) {
             timeRemaining.postValue(payload.getTimeRemainingSeconds());
         } else if (game.getRoundDurationSeconds() > 0) {
             timeRemaining.postValue(game.getRoundDurationSeconds());
+        }
+        
+        // Server should provide the word
+        if (game.getCurrentWord() == null || game.getCurrentWord().isEmpty()) {
+            Log.d("GameRepository", "Warning: Server did not provide a word for round start");
         }
         
         // Add system message
@@ -619,9 +606,19 @@ public class GameRepository extends BaseRepository {
      * Handle guess submitted event
      */
     private void handleGuessSubmitted(Game game, GameStateMessage.GamePayload payload) {
-        // Update player scores if available
-        if (payload.getPlayerScores() != null) {
-            game.setPlayerScores(payload.getPlayerScores());
+        // Add system message about the correct guess
+        String message = null;
+        
+        // Try to extract message from event field
+        if (payload.getEvent() != null && payload.getEvent().contains(":")) {
+            message = payload.getEvent().split(":", 2)[1].trim();
+        }
+        
+        if (message != null && !message.isEmpty()) {
+            addSystemChatMessage(message);
+        } else {
+            // Default message if none provided
+            addSystemChatMessage("A player made a correct guess!");
         }
         
         // Update current game
@@ -633,17 +630,29 @@ public class GameRepository extends BaseRepository {
      */
     private void handleRoundEnded(Game game, GameStateMessage.GamePayload payload) {
         Log.i("GameRepository", "Round ended event for game: " + game.getGameId() + 
-               ", round: " + game.getCurrentRound());
-        
-        // Update player scores if available
-        if (payload.getPlayerScores() != null) {
-            game.setPlayerScores(payload.getPlayerScores());
-        }
+           ", round: " + game.getCurrentRound());
         
         // Add system message
         addSystemChatMessage("Round " + game.getCurrentRound() + " ended!");
         
-        // Update current game
+        // The server should handle round progression and send updated game state
+        // We'll just log the current state and wait for the server's next update
+        Log.d("GameRepository", "Waiting for server to update game state for next round");
+        
+        if (payload.getGame() != null && payload.getGame().getGameState() != null) {
+            // Use the game state from the server payload if available
+            game.setGameState(payload.getGame().getGameState());
+        }
+        
+        // If this is the last round, mark the game as finished
+        if (game.getCurrentRound() >= game.getTotalRounds()) {
+            Log.d("GameRepository", "Final round completed, game should be finished");
+            game.setGameState(Game.GameState.FINISHED);
+            addSystemChatMessage("Game ended!");
+        }
+        
+        // Update current game with whatever state we have
+        // The server will send a new game state message with the next round info
         currentGame.postValue(game);
     }
     
@@ -656,13 +665,8 @@ public class GameRepository extends BaseRepository {
         // Update game state
         game.setGameState(Game.GameState.FINISHED);
         
-        // Update player scores if available
-        if (payload.getPlayerScores() != null) {
-            game.setPlayerScores(payload.getPlayerScores());
-        }
-        
         // Add system message
-        addSystemChatMessage("Game ended!");
+        addSystemChatMessage("Game ended! Thanks for playing!");
         
         // Update current game
         currentGame.postValue(game);
@@ -677,16 +681,6 @@ public class GameRepository extends BaseRepository {
         // Update time remaining if available
         if (payload.getTimeRemainingSeconds() > 0) {
             timeRemaining.postValue(payload.getTimeRemainingSeconds());
-        }
-        
-        // Update drawings if available
-        if (payload.getDrawings() != null) {
-            game.setCurrentRoundDrawings(payload.getDrawings());
-        }
-        
-        // Update player scores if available
-        if (payload.getPlayerScores() != null) {
-            game.setPlayerScores(payload.getPlayerScores());
         }
         
         // Update current game
@@ -711,5 +705,78 @@ public class GameRepository extends BaseRepository {
      */
     private interface OnObservedListener<T> {
         void onObserved(T t);
+    }
+    
+    /**
+     * Log game state information
+     * 
+     * @param game The game to process
+     */
+    private void ensureGameDataComplete(Game game) {
+        // Server should provide both drawer and word
+        // Just log current game state for debugging
+        Log.d("GameRepository", "Processed game update for game: " + game.getGameId() + 
+               ", round: " + game.getCurrentRound() + 
+               ", drawer: " + (game.getCurrentDrawer() != null ? game.getCurrentDrawer().getUsername() : "null") + 
+               ", word: " + (game.getCurrentWord() != null ? game.getCurrentWord() : "null"));
+    }
+    
+    // Removed selectRandomWord method as the server now handles word selection
+    
+    /**
+     * Submit a drawing to the server
+     * 
+     * @param drawing The drawing to submit
+     */
+    public void submitDrawing(Drawing drawing) {
+        Game game = currentGame.getValue();
+        if (game == null) {
+            Log.e("GameRepository", "Cannot submit drawing: no active game");
+            return;
+        }
+        
+        try {
+            // Create a JSON message to send to the server
+            JSONObject message = new JSONObject();
+            message.put("type", "submit_drawing");
+            message.put("gameId", game.getGameId());
+            message.put("userId", drawing.getUserId());
+            message.put("drawingData", drawing.getPaths());
+
+            // Send the message via WebSocket
+            webSocketService.sendMessage(message.toString());
+            Log.d("GameRepository", "Drawing submitted for game: " + game.getGameId());
+        } catch (JSONException e) {
+            Log.e("GameRepository", "Error creating drawing submission message", e);
+        }
+    }
+    
+    /**
+     * Rate a drawing in the current game
+     * 
+     * @param drawingId The ID of the drawing to rate
+     * @param rating The rating to give (0-5)
+     */
+    public void rateDrawing(String drawingId, float rating) {
+        Game game = currentGame.getValue();
+        if (game == null) {
+            Log.e("GameRepository", "Cannot rate drawing: no active game");
+            return;
+        }
+        
+        try {
+            // Create a JSON message to send to the server
+            JSONObject message = new JSONObject();
+            message.put("type", "rate_drawing");
+            message.put("gameId", game.getGameId());
+            message.put("drawingId", drawingId);
+            message.put("rating", rating);
+            
+            // Send the message via WebSocket
+            webSocketService.sendMessage(message.toString());
+            Log.d("GameRepository", "Drawing rated: " + drawingId + ", rating: " + rating);
+        } catch (JSONException e) {
+            Log.e("GameRepository", "Error creating drawing rating message", e);
+        }
     }
 }
